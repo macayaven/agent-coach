@@ -1,0 +1,6 @@
+description = "agent-coach: switch mode (force | suggest | off | status)"
+prompt = """
+I typed `/coach {{args}}`. The agent-coach hook normally handles this before it reaches you.
+If the argument is force, suggest or off: follow that agent-coach mode for the rest of this session, run `coach {{args}}` in the shell if it's available so the change persists, and confirm in one line.
+If it's empty or `status`: tell me the current agent-coach mode in one line.
+"""

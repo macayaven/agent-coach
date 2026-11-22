@@ -1,0 +1,16 @@
+{
+  "name": "agent-coach",
+  "owner": {
+    "name": "macayaven"
+  },
+  "metadata": {
+    "description": "Agent Coach: learn to work with AI coding agents the way top AI labs recommend."
+  },
+  "plugins": [
+    {
+      "name": "agent-coach",
+      "source": "./",
+      "description": "Coaches you to work with AI coding agents the way top AI labs recommend (force / suggest / off)."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "agent-coach",
+  "description": "Coaches you to work with AI coding agents the way top AI labs recommend. Force mode makes you redo each request with state-of-the-art techniques, suggest mode just suggests, off is off. Say `coach force|suggest|off`.",
+  "license": "MIT",
+  "keywords": [
+    "coaching",
+    "learning",
+    "agentic-coding",
+    "best-practices",
+    "prompting"
+  ],
+  "author": {
+    "name": "macayaven"
+  }
+}

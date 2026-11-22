@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""coach: switch agent-coach modes and install it into your coding agents.
+
+  coach                       show mode and playbook freshness
+  coach force|suggest|off     switch mode everywhere (also: coach on = force)
+  coach install [TOOL ...]    install adapters (default: every tool detected)
+  coach uninstall [TOOL ...]  remove adapters
+  coach update                pull the latest playbook and re-render adapters
+  coach render [MODE]         print the always-on instructions (for chat apps)
+  coach pack                  build dist/agent-coach-skill.zip to upload to chat apps
+  coach doctor                show what is installed where
+"""
+
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import adapters  # noqa: E402
+import coachlib  # noqa: E402
+
+
+def main(argv):
+    cmd = argv[0] if argv else "status"
+    args = argv[1:]
+    if cmd in ("status",):
+        print(coachlib.status_line())
+    elif cmd in ("force", "suggest", "off", "on") or cmd == "mode":
+        mode = coachlib.set_mode(args[0] if cmd == "mode" else cmd)
+        adapters.refresh()
+        print(f"agent-coach mode: {mode} (applies to new sessions; hook-based tools switch on the next prompt)")
+    elif cmd == "install":
+        for line in adapters.install(args or None):
+            print(line)
+    elif cmd == "uninstall":
+        for line in adapters.uninstall(args or None):
+            print(line)
+    elif cmd == "update":
+        if (coachlib.REPO / ".git").exists():
+            pull = subprocess.run(["git", "-C", str(coachlib.REPO), "pull", "--ff-only"], capture_output=True, text=True)
+            if pull.returncode != 0:
+                print(f"Couldn't pull the latest version, so refreshing from the local copy:\n  {pull.stderr.strip()}", file=sys.stderr)
+        adapters.update()
+        print(coachlib.status_line())
+    elif cmd == "refresh":
+        adapters.refresh()
+    elif cmd == "render":
+        mode = args[0] if args else coachlib.get_mode()
+        print(coachlib.render(mode) if mode != "off" else coachlib.render_off_stub())
+    elif cmd == "pack":
+        print(f"wrote {adapters.pack()}")
+    elif cmd == "doctor":
+        print(coachlib.status_line())
+        for line in adapters.doctor():
+            print(line)
+    elif cmd in ("-h", "--help", "help"):
+        print(__doc__.strip())
+    else:
+        print(f"unknown command {cmd!r}\n\n{__doc__.strip()}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
