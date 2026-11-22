@@ -33,7 +33,7 @@ class ShowAgentErrorTests(unittest.TestCase):
     def test_no_credit_in_json_lines(self):
         lines = [{"type": "system"}, {"type": "result", "is_error": True, "result": "Credit balance is too low"}]
         out = run("\n".join(json.dumps(m) for m in lines))
-        self.assertIn("Add credit", out.stdout)
+        self.assertIn("Billing page", out.stdout)
 
     def test_missing_or_empty_output_still_explains(self):
         self.assertIn("no output file", run(None).stdout)

@@ -8,13 +8,19 @@
 #   open-pr  can write to the repository, but runs no agent and has no access to the Claude API.
 #            It accepts only Markdown files under references/ and runs the tests.
 #
+# The agent runs through the Claude Code CLI (`claude -p`), not the Claude Code
+# GitHub Action, so that a Claude plan's monthly API credits can pay for it:
+# those credits cover `claude -p` you run yourself but not the Action.
+#
 # Setup, one of:
 #   Keyless (preferred): in the Claude Console, connect a GitHub Actions workload for
-#     repo:<owner>/<repo>:ref:refs/heads/main, then set the repository variables
+#     this repository's main branch, then set the repository variables
 #     ANTHROPIC_FEDERATION_RULE_ID, ANTHROPIC_ORGANIZATION_ID, ANTHROPIC_SERVICE_ACCOUNT_ID
 #     and, if the rule covers several workspaces, ANTHROPIC_WORKSPACE_ID.
+#     The README has the values that the Console asks for.
 #   API key: add an ANTHROPIC_API_KEY repository secret, from a dedicated key with a
 #     low spend limit. It is used only while the variables above are not set.
+# Optional: set the repository variable REFRESH_MODEL to a model ID to choose the model.
 name: Refresh techniques
 
 on:
@@ -34,35 +40,31 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-      id-token: write # lets the action prove to the Claude API which workflow is calling
+      id-token: write # lets the job prove to the Claude API which workflow is calling
+    env:
+      CLAUDE_CODE_VERSION: "2.1.330"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Get today's date
-        id: date
-        run: echo "today=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Install Claude Code
+        run: |
+          set -o pipefail
+          curl -fsSL https://claude.ai/install.sh | bash -s -- "$CLAUDE_CODE_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67 # v1
-        with:
+      - name: Run the refresh agent
+        env:
           # Keyless sign-in. No stored secret: the Claude API checks this workflow's identity.
-          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
-          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
-          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
-          anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          ANTHROPIC_FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ANTHROPIC_ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          ANTHROPIC_WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
           # A stored key would override keyless sign-in, so pass it only when keyless isn't set up.
-          anthropic_api_key: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID == '' && secrets.ANTHROPIC_API_KEY || '' }}
-          # The job's own read-only token. Without it the action asks for an OIDC token.
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          prompt: |
-            Follow skills/agent-coach/references/REFRESH.md exactly. Today's date is ${{ steps.date.outputs.today }}.
-          # "default" makes the allow list strict: anything not listed is denied.
-          claude_args: >-
-            --permission-mode default
-            --max-turns 120
-            --allowedTools "Read,Glob,Grep,Edit,Write,WebFetch(domain:code.claude.com),WebFetch(domain:www.anthropic.com),WebFetch(domain:anthropic.com),WebFetch(domain:learn.chatgpt.com),WebFetch(domain:developers.openai.com),WebFetch(domain:openai.com),WebFetch(domain:antigravity.google),WebFetch(domain:developers.googleblog.com),WebFetch(domain:cursor.com),WebFetch(domain:docs.github.com),WebFetch(domain:github.blog),WebFetch(domain:raw.githubusercontent.com),WebFetch(domain:agents.md),WebFetch(domain:agentskills.io),WebFetch(domain:simonwillison.net)"
-            --disallowedTools "Bash,WebSearch,Read(//proc/**),Read(//home/runner/work/_temp/**)"
+          ANTHROPIC_API_KEY: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID == '' && secrets.ANTHROPIC_API_KEY || '' }}
+          REFRESH_MODEL: ${{ vars.REFRESH_MODEL }}
+        run: bash .github/scripts/run-refresh-agent.sh
 
       - name: Show why the agent failed
         if: failure()

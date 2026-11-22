@@ -88,9 +88,36 @@ The mode is saved once for all tools, in `~/.agent-coach/state/mode`.
 Practices change quickly, so the technique index carries a `reviewed:` date and each technique file carries a `verified:` date.
 
 - **Monthly refresh.** A GitHub Action (`.github/workflows/refresh-techniques.yml`) has an agent re-read the official sources in [`sources.md`](skills/agent-coach/references/sources.md) and update the techniques following [`REFRESH.md`](skills/agent-coach/references/REFRESH.md). A second job, which runs no agent, checks the result, runs the tests and opens a pull request. You review and merge it.
-- **Enabling it.** The refresh needs to call the Claude API. The preferred way stores no secret: in the Claude Console, open Settings → Workload identity → Connect workload → GitHub Actions, and match the subject `repo:<owner>/<repo>:ref:refs/heads/main`. Then add the IDs it gives you as repository variables (Settings → Secrets and variables → Actions → Variables): `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_SERVICE_ACCOUNT_ID` and, if asked for, `ANTHROPIC_WORKSPACE_ID`. The alternative is an `ANTHROPIC_API_KEY` repository secret from a dedicated key with a low spend limit. Either way the API account needs credit. Run the workflow once by hand from the Actions tab to check it works; if it fails, its log says why.
+- **Enabling it.** The refresh calls the Claude API, so it needs a sign-in and credit. See [Set up the monthly refresh](#set-up-the-monthly-refresh).
 - **Getting the update.** Run `coach update` on each machine. It pulls the repository and refreshes every installed tool.
 - **Staleness warning.** If the techniques were last reviewed more than 60 days ago, the coach tells you once per session to update.
+
+## Set up the monthly refresh
+
+**Sign-in without a stored key (preferred).** In the Claude Console, open Settings → Workload identity → Connect workload → GitHub Actions and create a rule for this repository:
+
+| Field | Value |
+|---|---|
+| GitHub organization | the repository's owner |
+| Repository | the repository's name |
+| Branch / ref | `refs/heads/main` |
+| CEL condition | leave empty |
+| Workspaces | exactly one |
+
+Then add the IDs the Console gives you as repository variables (Settings → Secrets and variables → Actions → Variables): `ANTHROPIC_FEDERATION_RULE_ID`, `ANTHROPIC_ORGANIZATION_ID`, `ANTHROPIC_SERVICE_ACCOUNT_ID` and `ANTHROPIC_WORKSPACE_ID`. Don't add the sample workflow the Console shows.
+
+Run "Refresh techniques" once by hand from the Actions tab. If the sign-in is refused, the Console's Workload identity history shows the reason and the values the run sent. Two refusals are common:
+
+- **`match_subject_prefix`.** GitHub can issue the subject in a newer format that includes numeric IDs, such as `repo:<owner>@<id>/<repo>@<id>:ref:refs/heads/main`. Copy the `sub` value from the history entry into the rule's subject.
+- **`match_claim_value_mismatch`.** The wizard's "Only push" option adds a condition that the event is `push`, but the refresh is started by schedule or by hand. Remove the `event_name` condition from the rule.
+
+**Sign-in with a key (alternative).** Add an `ANTHROPIC_API_KEY` repository secret from a dedicated key with a low spend limit. It is used only while the variables above are not set.
+
+**Credit.** The Console organization needs API credit. The monthly API credits included in some Claude plans work, once they are linked to that organization: the workflow runs the agent with `claude -p` directly because those credits don't cover the Claude Code GitHub Action.
+
+**Model.** The refresh uses Claude Code's default model. To choose another, set the repository variable `REFRESH_MODEL` to a model ID.
+
+If a run fails, its log states why in the "Show why the agent failed" step.
 
 ## Context cost
 
@@ -111,10 +138,11 @@ The unit tests enforce these budgets, so a refresh can't quietly make the coach 
 ```bash
 python3 -m unittest discover -s tests        # installer, hooks, mode logic, context budgets
 bash tests/test_accept_refresh.sh            # the script that vets the monthly refresh
+bash tests/test_run_refresh_agent.sh         # how the refresh agent's sign-in is handled
 claude plugin eval . --runs 3 --ablation none   # behavior in Claude Code (makes real model calls)
 ```
 
-CI runs the first two on every pull request.
+CI runs the first three on every pull request.
 
 The eval suite in `evals/` checks that force mode asks for a redo without loading technique files, suggest mode does the task and adds a note, plain questions are answered directly, and off stays quiet.
 
