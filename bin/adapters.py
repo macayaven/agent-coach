@@ -1,10 +1,12 @@
 """Install agent-coach into each coding agent's user-level configuration.
 
-Each tool gets the strongest mechanism it supports:
-  - per-prompt hooks (Claude Code, Codex, Gemini CLI) for reliable "every request" coaching,
-  - session-start hooks (Cursor), or
-  - a managed block in the tool's global instruction file (Codex, Antigravity, Gemini CLI, VS Code),
-plus the portable Agent Skills (`agent-coach`, `coach`) wherever skills are read.
+Each tool gets the strongest mechanism it supports, and the coach keeps to files
+of its own: it adds hooks, or a rules file that belongs to it, and never writes
+its rules into an instruction file you share with other things.
+  - Hooks at session start and on every prompt: Claude Code, Codex, Gemini CLI.
+  - Hooks at session start: Cursor.
+  - A rules file of its own: Antigravity, VS Code Copilot.
+Plus the portable Agent Skills (`agent-coach`, `coach`) wherever skills are read.
 """
 
 import json
@@ -29,28 +31,60 @@ def codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME") or HOME / ".codex")
 
 
+def launcher_path() -> Path:
+    return coachlib.state_dir().parent / "bin" / "coach-hook"
+
+
 def hook_command(tool: str, event: str) -> str:
-    return f'"{sys.executable}" "{REPO / "hooks" / "coach_hook.py"}" {tool} {event}'
+    """The command a tool runs for a hook. It goes through a launcher, so the command
+    stays the same when Python or the checkout moves."""
+    if os.name == "nt":
+        return f'"{sys.executable}" "{REPO / "hooks" / "coach_hook.py"}" {tool} {event}'
+    return f'"{launcher_path()}" {tool} {event}'
+
+
+def write_launcher():
+    """A small shell script that runs the hook with whichever Python 3 is available."""
+    if os.name == "nt":
+        return
+    hook = REPO / "hooks" / "coach_hook.py"
+    script = (
+        "#!/bin/sh\n"
+        "# Written by `coach install`. Runs the agent-coach hook with whichever Python 3\n"
+        "# is available, so the hooks keep working after a Python upgrade.\n"
+        f'for py in "{sys.executable}" python3 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3; do\n'
+        '  if command -v "$py" > /dev/null 2>&1; then\n'
+        f'    exec "$py" "{hook}" "$@"\n'
+        "  fi\n"
+        "done\n"
+        "# No Python: add nothing, and never hold up the prompt.\n"
+        'if [ "$1" = cursor ] && [ "$2" = prompt ]; then echo \'{"continue": true}\'; else echo \'{}\'; fi\n'
+    )
+    path = launcher_path()
+    write_text(path, script, keep_backup=False)
+    path.chmod(0o755)
 
 
 def is_ours(handler) -> bool:
-    return "coach_hook.py" in json.dumps(handler)
+    text = json.dumps(handler)
+    return "coach_hook.py" in text or "coach-hook" in text
 
 
 # --- file helpers -----------------------------------------------------------
 
 
-def backup(path: Path):
-    bak = path.with_name(path.name + ".agent-coach.bak")
-    if path.exists() and not bak.exists():
-        shutil.copy2(path, bak)
+def backup_path(path: Path) -> Path:
+    return path.with_name(path.name + ".agent-coach.bak")
 
 
-def write_text(path: Path, new: str):
+def write_text(path: Path, new: str, keep_backup: bool = True):
+    """Write a file if its content changed. The first change to a file that isn't
+    ours keeps a copy of the original beside it."""
     old = path.read_text(encoding="utf-8") if path.exists() else None
     if new == old:
         return
-    backup(path)
+    if keep_backup and path.exists() and not backup_path(path).exists():
+        shutil.copy2(path, backup_path(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(new, encoding="utf-8")
 
@@ -66,13 +100,28 @@ def write_block(path: Path, body: str):
 
 
 def remove_block(path: Path):
-    if not path.exists():
-        return
-    text = path.read_text(encoding="utf-8")
-    if BEGIN not in text or END not in text:
-        return
-    new = (text[: text.index(BEGIN)].rstrip() + "\n" + text[text.index(END) + len(END) :].lstrip()).strip()
-    write_text(path, new + "\n" if new else "")
+    """Take our managed block out of a file, putting the file back exactly as it
+    was before the coach touched it when the saved original still matches."""
+    bak = backup_path(path)
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        if BEGIN in text and END in text:
+            new = (text[: text.index(BEGIN)].rstrip() + "\n" + text[text.index(END) + len(END) :].lstrip()).strip()
+            new = new + "\n" if new else ""
+            if bak.exists():
+                original = bak.read_text(encoding="utf-8")
+                if original.strip() == new.strip():
+                    new = original
+            write_text(path, new, keep_backup=False)
+    if bak.exists() and path.exists():
+        saved, current = bak.read_text(encoding="utf-8"), path.read_text(encoding="utf-8")
+        if saved == current or BEGIN in saved:  # nothing left worth keeping
+            bak.unlink()
+
+
+def write_own_file(path: Path, content: str):
+    """Write a file that belongs to the coach (no backup: there is no original)."""
+    write_text(path, content, keep_backup=False)
 
 
 def edit_json(path: Path, change):
@@ -137,8 +186,8 @@ def run(cmd):
 
 # --- adapters ---------------------------------------------------------------
 #
-# Each adapter: detect() -> bool, install() -> [notes], uninstall(), render() for
-# mode changes (static instruction files only), update() after `git pull`.
+# Each adapter: detect() -> bool, install() -> [notes], uninstall(), render() to
+# rewrite its own rules file after a mode change, update() after `git pull`.
 
 
 class Claude:
@@ -171,91 +220,112 @@ class Claude:
 
 
 class Codex:
-    """Codex CLI, IDE extension and desktop app (they share $CODEX_HOME)."""
+    """Codex CLI, IDE extension and desktop app (they share $CODEX_HOME). Hooks only."""
 
     name = "codex"
+    EVENTS = (("SessionStart", "session-start"), ("UserPromptSubmit", "prompt"))
 
     def detect(self):
         return shutil.which("codex") is not None or codex_home().exists()
 
-    def agents_md(self):
-        override = codex_home() / "AGENTS.override.md"
-        has_override = override.exists() and override.read_text(encoding="utf-8").strip()
-        return override if has_override else codex_home() / "AGENTS.md"
+    def remove_old_block(self):
+        # Earlier versions wrote the rules into AGENTS.md.
+        for name in ("AGENTS.md", "AGENTS.override.md"):
+            remove_block(codex_home() / name)
+
+    def set_hooks(self, on: bool):
+        def change(d):
+            for event, arg in self.EVENTS:
+                group = {"hooks": [{"type": "command", "command": hook_command("codex", arg),
+                                    "statusMessage": "agent-coach"}]}
+                set_hook(d.setdefault("hooks", {}), event, group if on else None)
+
+        path = codex_home() / "hooks.json"
+        if on or path.exists():
+            edit_json(path, change)
 
     def install(self):
-        self.render()
-        group = {"hooks": [{"type": "command", "command": hook_command("codex", "prompt"),
-                            "statusMessage": "agent-coach"}]}
-        edit_json(codex_home() / "hooks.json",
-                  lambda d: set_hook(d.setdefault("hooks", {}), "UserPromptSubmit", group))
+        self.remove_old_block()
+        self.set_hooks(True)
         install_skills(HOME / ".agents" / "skills")
-        return ["In Codex, run /hooks once and trust the agent-coach hook (Codex asks again whenever it changes)."]
+        return ["In Codex, run /hooks and trust the two agent-coach hooks (Codex asks again whenever they change)."]
 
     def uninstall(self):
-        remove_block(self.agents_md())
-        path = codex_home() / "hooks.json"
-        if path.exists():
-            edit_json(path, lambda d: set_hook(d.setdefault("hooks", {}), "UserPromptSubmit", None))
+        self.remove_old_block()
+        self.set_hooks(False)
 
     def render(self):
-        write_block(self.agents_md(), instructions())
+        pass  # the hooks read the mode
 
     def update(self):
         self.install()
 
 
 class Gemini:
-    """Gemini CLI (API-key and Enterprise users; consumers moved to Antigravity CLI)."""
+    """Gemini CLI (API-key and Enterprise users; consumers moved to Antigravity CLI). Hooks only."""
 
     name = "gemini"
+    EVENTS = (("SessionStart", "session-start"), ("BeforeAgent", "prompt"))
 
     def detect(self):
         return shutil.which("gemini") is not None or (HOME / ".gemini" / "settings.json").exists()
 
+    def set_hooks(self, on: bool):
+        def change(d):
+            for event, arg in self.EVENTS:
+                group = {"hooks": [{"type": "command", "name": "agent-coach",
+                                    "command": hook_command("gemini", arg), "timeout": 10000}]}
+                set_hook(d.setdefault("hooks", {}), event, group if on else None)
+
+        path = HOME / ".gemini" / "settings.json"
+        if on or path.exists():
+            edit_json(path, change)
+
     def install(self):
-        self.render()
-        group = {"hooks": [{"type": "command", "name": "agent-coach",
-                            "command": hook_command("gemini", "prompt"), "timeout": 10000}]}
-        edit_json(HOME / ".gemini" / "settings.json",
-                  lambda d: set_hook(d.setdefault("hooks", {}), "BeforeAgent", group))
+        remove_block(HOME / ".gemini" / "GEMINI.md")  # earlier versions wrote the rules here
+        self.set_hooks(True)
         install_skills(HOME / ".agents" / "skills")
-        write_text(HOME / ".gemini" / "commands" / "coach.toml", (REPO / "adapters" / "gemini" / "coach.toml").read_text())
+        write_own_file(HOME / ".gemini" / "commands" / "coach.toml",
+                       (REPO / "adapters" / "gemini" / "coach.toml").read_text())
         return []
 
     def uninstall(self):
         remove_block(HOME / ".gemini" / "GEMINI.md")
-        path = HOME / ".gemini" / "settings.json"
-        if path.exists():
-            edit_json(path, lambda d: set_hook(d.setdefault("hooks", {}), "BeforeAgent", None))
+        self.set_hooks(False)
         (HOME / ".gemini" / "commands" / "coach.toml").unlink(missing_ok=True)
 
     def render(self):
-        write_block(HOME / ".gemini" / "GEMINI.md", instructions())
+        pass  # the hooks read the mode
 
     def update(self):
         self.install()
 
 
 class Antigravity:
-    """Antigravity App, IDE and CLI (`agy`). Reads ~/.gemini/GEMINI.md, like Gemini CLI."""
+    """Antigravity App, IDE and CLI (`agy`). A global rules file of the coach's own."""
 
     name = "antigravity"
 
     def detect(self):
         return shutil.which("agy") is not None or (HOME / ".gemini" / "config").exists()
 
+    def rule_file(self) -> Path:
+        return HOME / ".gemini" / "config" / "rules" / "agent-coach.md"
+
     def install(self):
+        remove_block(HOME / ".gemini" / "GEMINI.md")  # earlier versions wrote the rules here
         self.render()
         install_skills(HOME / ".gemini" / "config" / "skills")
         return ["Antigravity reads the mode when a session starts. To switch mid-session, say `coach <mode>` in chat."]
 
     def uninstall(self):
         remove_block(HOME / ".gemini" / "GEMINI.md")
+        self.rule_file().unlink(missing_ok=True)
         remove_skills(HOME / ".gemini" / "config" / "skills")
 
     def render(self):
-        write_block(HOME / ".gemini" / "GEMINI.md", instructions())
+        # Antigravity drops a rules file that has no valid trigger.
+        write_own_file(self.rule_file(), "---\ntrigger: always_on\n---\n\n" + instructions())
 
     def update(self):
         self.install()
@@ -312,17 +382,31 @@ class VSCode:
     def detect(self):
         return (HOME / ".copilot").exists() or shutil.which("code") is not None
 
+    def general_file(self) -> Path:
+        return HOME / ".copilot" / "copilot-instructions.md"
+
+    def own_file(self) -> Path:
+        return HOME / ".copilot" / "instructions" / "agent-coach.instructions.md"
+
     def install(self):
         self.render()
         install_skills(HOME / ".copilot" / "skills")
         return []
 
     def uninstall(self):
-        remove_block(HOME / ".copilot" / "copilot-instructions.md")
+        remove_block(self.general_file())
+        self.own_file().unlink(missing_ok=True)
         remove_skills(HOME / ".copilot" / "skills")
 
     def render(self):
-        write_block(HOME / ".copilot" / "copilot-instructions.md", instructions())
+        # Copilot's general file is the surest always-on place. If it is a link to a
+        # file you keep elsewhere, leave that file alone and use one of our own.
+        if self.general_file().is_symlink():
+            remove_block(self.general_file())
+            write_own_file(self.own_file(), '---\napplyTo: "**"\n---\n\n' + instructions())
+        else:
+            self.own_file().unlink(missing_ok=True)
+            write_block(self.general_file(), instructions())
 
     def update(self):
         self.install()
@@ -364,6 +448,7 @@ def install(names=None):
     names = pick(names, [n for n, a in ADAPTERS.items() if a.detect()])
     if not coachlib.state_dir().joinpath("mode").exists():
         coachlib.set_mode(coachlib.DEFAULT_MODE)
+    write_launcher()
     done = set(load_installed()["tools"])
     lines = []
     for name in names:
@@ -393,19 +478,20 @@ def uninstall(names=None):
             lines.append(f"✗ {name}: {e}")
     if not done & SHARED_SKILL_USERS:
         remove_skills(HOME / ".agents" / "skills")
-    for name in done:  # re-render blocks another remaining tool shares (e.g. GEMINI.md)
-        ADAPTERS[name].render()
+    if not done and os.name != "nt":
+        launcher_path().unlink(missing_ok=True)
     save_installed(done)
     return lines
 
 
 def refresh():
-    """Re-render static instruction files after a mode change."""
+    """Rewrite the coach's own rules files after a mode change."""
     for name in load_installed()["tools"]:
         ADAPTERS[name].render()
 
 
 def update():
+    write_launcher()
     for name in load_installed()["tools"]:
         ADAPTERS[name].update()
 
