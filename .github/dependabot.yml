@@ -1,0 +1,11 @@
+# Workflow actions are pinned to exact commits. Once a month, Dependabot opens
+# one pull request that moves them to their latest releases.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

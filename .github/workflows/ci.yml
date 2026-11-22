@@ -1,0 +1,24 @@
+# Runs the tests on every pull request and on main. They cover the installer,
+# the hooks, mode switching, the context-size budgets, and the script that
+# vets the monthly refresh.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s tests -v
+      - name: Check the refresh acceptance script
+        run: bash tests/test_accept_refresh.sh

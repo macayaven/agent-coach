@@ -54,11 +54,16 @@ mkdir -p ~/.claude && python3 /opt/agent-coach/bin/coach render >> ~/.claude/CLA
 
 ### Chat apps (claude.ai, ChatGPT, Gemini)
 
-Chat apps can't run the installer. Do it by hand, once per app:
+Chat apps can't run the installer, and nothing outside the app can change their settings. Do it by hand, once per app:
 
-1. Run `coach pack`, then upload `dist/agent-coach-skill.zip` as a skill (claude.ai: Customize → Skills; Gemini: Customize → Skills; ChatGPT desktop: Skills).
-2. Add this line to the app's custom instructions:
-   `Use the agent-coach skill on every request. Mode: force, unless I say "coach suggest" or "coach off".`
+1. Run `coach pack`, then upload `dist/agent-coach-skill.zip` as a skill:
+   - claude.ai: Customize → Skills → + → Upload (code execution must be on)
+   - Gemini: Customize → Skills → Create → upload
+   - ChatGPT desktop app: Skills
+2. Add this line to the app's custom instructions (claude.ai: Settings → Instructions; ChatGPT: Settings → Personalization; Gemini: Settings → Personal context):
+   `For requests about code or working with AI agents, use the agent-coach skill. Mode: force, unless I say "coach suggest" or "coach off".`
+
+The line limits coaching to coding work, because custom instructions apply to every chat you have in that app. Change `force` to `suggest` if being asked to redo requests gets in the way there.
 
 If the app has no skill upload, create a project, add `SKILL.md` and `references/index.md` from the zip as project files, and put the same line in the project's instructions.
 
@@ -82,7 +87,8 @@ The mode is saved once for all tools, in `~/.agent-coach/state/mode`.
 
 Practices change quickly, so the technique index carries a `reviewed:` date and each technique file carries a `verified:` date.
 
-- **Monthly refresh.** A GitHub Action (`.github/workflows/refresh-techniques.yml`) has an agent re-read the official sources in [`sources.md`](skills/agent-coach/references/sources.md), update the techniques following [`REFRESH.md`](skills/agent-coach/references/REFRESH.md), and open a pull request. You review and merge it. To enable it, add an `ANTHROPIC_API_KEY` secret to the repository (or switch the workflow to `claude_code_oauth_token`), and allow GitHub Actions to create pull requests.
+- **Monthly refresh.** A GitHub Action (`.github/workflows/refresh-techniques.yml`) has an agent re-read the official sources in [`sources.md`](skills/agent-coach/references/sources.md) and update the techniques following [`REFRESH.md`](skills/agent-coach/references/REFRESH.md). A second job, which runs no agent, checks the result, runs the tests and opens a pull request. You review and merge it.
+- **Enabling it.** Add a repository secret named `ANTHROPIC_API_KEY` under Settings → Secrets and variables → Actions. Use a dedicated API key with a low spend limit. Then run the workflow once by hand from the Actions tab to check it works.
 - **Getting the update.** Run `coach update` on each machine. It pulls the repository and refreshes every installed tool.
 - **Staleness warning.** If the techniques were last reviewed more than 60 days ago, the coach tells you once per session to update.
 
@@ -103,11 +109,27 @@ The unit tests enforce these budgets, so a refresh can't quietly make the coach 
 ## Test it
 
 ```bash
-python3 -m unittest discover -s tests        # installer, hooks, mode logic
-claude plugin eval . --runs 1 --ablation none   # behavior in Claude Code (makes real model calls)
+python3 -m unittest discover -s tests        # installer, hooks, mode logic, context budgets
+bash tests/test_accept_refresh.sh            # the script that vets the monthly refresh
+claude plugin eval . --runs 3 --ablation none   # behavior in Claude Code (makes real model calls)
 ```
 
+CI runs the first two on every pull request.
+
 The eval suite in `evals/` checks that force mode asks for a redo without loading technique files, suggest mode does the task and adds a note, plain questions are answered directly, and off stays quiet.
+
+## How it works
+
+1. **One set of rules.** `skills/agent-coach/SKILL.md` holds the rules for all three modes. Everything else is built from it.
+2. **One saved mode.** `coach <mode>` writes the mode to `~/.agent-coach/state/mode`. Every tool reads it from there.
+3. **Delivery per tool.** `coach install` gives each tool the strongest mechanism it supports:
+   - a hook that adds the current mode's rules at session start and a one-line reminder on each prompt, or
+   - a managed block in the tool's global instruction file, rewritten whenever the mode changes.
+4. **Techniques on demand.** The agent reads the short index the first time it coaches in a session, and one technique file only when you ask `why`.
+
+## Security
+
+Installing Agent Coach lets this repository put instructions into your agents and run a small Python hook on your machine. `main` is therefore protected: changes arrive only through pull requests, CI runs on each one, and the monthly refresh agent is isolated from both the repository and the shell. [SECURITY.md](SECURITY.md) has the details and what to check before using a fork.
 
 ## Limits
 
@@ -119,14 +141,18 @@ The eval suite in `evals/` checks that force mode asks for a redo without loadin
 ## Layout
 
 ```
-skills/agent-coach/SKILL.md              the coaching rules (single source for every tool)
-skills/agent-coach/references/index.md   technique index, read once per coached session
+skills/agent-coach/SKILL.md                the coaching rules (single source for every tool)
+skills/agent-coach/references/index.md     technique index, read once per coached session
 skills/agent-coach/references/techniques/  one file per technique, read only on `why`
-skills/agent-coach/references/           also: retired practices, sources, refresh procedure
-skills/coach/SKILL.md                    /coach command
-hooks/                                   per-prompt and session-start hook
-bin/coach                                CLI: modes, install, update, pack
-bin/adapters.py                          per-tool installers
-.claude-plugin/                          Claude Code plugin and marketplace manifests
-evals/, tests/                           behavioral evals and unit tests
+skills/agent-coach/references/             also: retired practices, sources, refresh procedure
+skills/coach/SKILL.md                      /coach command
+hooks/                                     per-prompt and session-start hook
+bin/coach                                  CLI: modes, install, update, pack, doctor
+bin/adapters.py                            per-tool installers
+.claude-plugin/                            Claude Code plugin and marketplace manifests
+.github/workflows/                         CI and the monthly refresh
+.github/rulesets/protect-main.json         the branch protection applied to main
+evals/, tests/                             behavioral evals and tests
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) to change the coach and [SECURITY.md](SECURITY.md) for how the repository is protected.

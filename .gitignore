@@ -1,5 +1,6 @@
 __pycache__/
 dist/
 evals/results/
-.refresh-summary.md
+refresh-summary.md
+out/
 *.agent-coach.bak
