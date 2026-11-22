@@ -26,6 +26,10 @@ class ShowAgentErrorTests(unittest.TestCase):
         self.assertIn("Invalid API key", out.stdout)
         self.assertIn("ANTHROPIC_API_KEY secret", out.stdout)
 
+    def test_denied_keyless_sign_in(self):
+        out = run(json.dumps([{"type": "result", "is_error": True, "api_error_status": 401, "result": "Authentication failed"}]))
+        self.assertIn("federation rule", out.stdout)
+
     def test_no_credit_in_json_lines(self):
         lines = [{"type": "system"}, {"type": "result", "is_error": True, "result": "Credit balance is too low"}]
         out = run("\n".join(json.dumps(m) for m in lines))

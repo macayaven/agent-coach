@@ -21,11 +21,11 @@ So anyone who can change `main` can change what your agents are told and what ru
 
 The refresh agent reads web pages, and a page could try to manipulate it. The workflow limits what a manipulated agent could do:
 
-- The agent's job holds the API key, but it can't write to the repository, can't run shell commands, and can fetch only from the listed source domains.
-- A separate job opens the pull request. It runs no agent and never sees the API key. It accepts only small Markdown files under `skills/agent-coach/references/` and runs the tests first.
+- The agent's job can call the Claude API, but it can't write to the repository, can't run shell commands, and can fetch only from the listed source domains.
+- A separate job opens the pull request. It runs no agent and has no access to the Claude API. It accepts only small Markdown files under `skills/agent-coach/references/` and runs the tests first.
 - A person reviews and merges the pull request. Read the changes to `index.md` closely, because agents treat that file as instructions.
 
-One risk remains: a manipulated agent could try to leak the API key to one of the allowed domains. Use a dedicated API key with a low spend limit for the `ANTHROPIC_API_KEY` secret, so a leak is cheap and easy to revoke.
+The workflow signs in to the Claude API without a stored key where that is set up: the API checks that the request comes from this repository's `main` branch and issues a credential that lasts minutes. If you use an `ANTHROPIC_API_KEY` secret instead, one risk remains: a manipulated agent could try to leak the key to one of the allowed domains. Use a dedicated key with a low spend limit, so a leak is cheap and easy to revoke.
 
 ## Settings these protections depend on
 
@@ -33,7 +33,7 @@ Several protections are repository settings, not files, so they don't travel wit
 
 1. **Rules → Rulesets → New ruleset → Import a ruleset.** Choose `.github/rulesets/protect-main.json`. If the import is refused, create a branch ruleset for the default branch by hand: restrict deletions, block force pushes, and require a pull request before merging with zero required approvals.
 2. **Actions → General → Workflow permissions.** Select read-only permissions, and tick "Allow GitHub Actions to create and approve pull requests" so the refresh can open its pull request.
-3. **Secrets and variables → Actions.** Add the `ANTHROPIC_API_KEY` secret.
+3. **Secrets and variables → Actions.** Add the `ANTHROPIC_*` variables for keyless sign-in, or the `ANTHROPIC_API_KEY` secret. The README's "Keeping it current" section has the steps.
 4. **Advanced Security.** Turn on private vulnerability reporting, and confirm secret scanning and push protection are on.
 
 ## If you fork or install someone else's copy

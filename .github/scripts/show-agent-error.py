@@ -12,7 +12,9 @@ from pathlib import Path
 HINTS = [
     ("credit balance", "The API account has no credit. Add credit in the Claude Console under Billing, then rerun."),
     ("invalid api key", "The API rejected the key. Put a valid Claude API key (it starts with sk-ant-api) in the ANTHROPIC_API_KEY secret."),
-    ("401", "The API rejected the key. Put a valid Claude API key (it starts with sk-ant-api) in the ANTHROPIC_API_KEY secret."),
+    ("401", "The API rejected the sign-in. With keyless sign-in, check the four ANTHROPIC_* repository variables and that the "
+            "federation rule matches this repository's main branch; the Claude Console's Workload identity history shows why. "
+            "With a key, put a valid Claude API key in the ANTHROPIC_API_KEY secret."),
     ("403", "The key isn't allowed to do this. Check the key's workspace and its model access."),
     ("429", "A rate limit or the key's spend limit was reached. Raise the limit or rerun later."),
     ("529", "The API was overloaded. Rerun later."),
