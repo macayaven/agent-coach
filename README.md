@@ -23,16 +23,20 @@ git clone https://github.com/macayaven/agent-coach ~/agent-coach
 ~/agent-coach/bin/coach install
 ```
 
-`coach install` sets up every supported tool it finds on your machine. To pick tools yourself, name them: `coach install claude codex cursor`. Every config file it edits is backed up first as `<name>.agent-coach.bak`, and `coach uninstall` removes everything it added.
+`coach install` sets up every supported tool it finds on your machine. To pick tools yourself, name them: `coach install claude codex cursor`.
+
+The coach keeps to files of its own. It adds hooks to each tool's hook settings and, where a tool has no hooks, a rules file that belongs to it. It never writes its rules into `AGENTS.md`, `CLAUDE.md` or `GEMINI.md`, so instruction files you maintain or link from elsewhere stay untouched. The first time it edits a settings file, it keeps the original beside it as `<name>.agent-coach.bak`. `coach uninstall` removes everything it added.
 
 | Tool | What gets installed | How coaching reaches each request |
 |---|---|---|
 | Claude Code (CLI, desktop app, IDE extensions) | A Claude Code plugin: hooks and skills | A hook on every prompt |
-| Codex (CLI, IDE extension, ChatGPT desktop app) | A block in `~/.codex/AGENTS.md`, a hook in `~/.codex/hooks.json`, skills in `~/.agents/skills` | A hook on every prompt, once you trust it: run `/hooks` in Codex |
-| Antigravity (app, IDE, `agy` CLI) | A block in `~/.gemini/GEMINI.md`, skills in `~/.gemini/config/skills` | Always-on instructions, read when a session starts |
-| Gemini CLI | The same `GEMINI.md` block, a hook in `~/.gemini/settings.json`, a `/coach` command | A hook on every prompt |
-| Cursor (IDE, `agent` CLI) | Hooks in `~/.cursor/hooks.json`, skills in `~/.agents/skills` | Rules injected when a chat starts |
-| VS Code with GitHub Copilot | A block in `~/.copilot/copilot-instructions.md`, skills in `~/.copilot/skills` | Always-on instructions |
+| Codex (CLI, IDE extension, ChatGPT desktop app) | Two hooks in `~/.codex/hooks.json`, skills in `~/.agents/skills` | A hook on every prompt, once you trust the hooks: run `/hooks` in Codex |
+| Gemini CLI | Two hooks in `~/.gemini/settings.json`, a `/coach` command, skills in `~/.agents/skills` | A hook on every prompt |
+| Antigravity (app, IDE, `agy` CLI) | Its own rules file, `~/.gemini/config/rules/agent-coach.md`, and skills in `~/.gemini/config/skills` | Always-on rules, read when a session starts |
+| Cursor (IDE, `agent` CLI) | Two hooks in `~/.cursor/hooks.json`, skills in `~/.agents/skills` | Rules injected when a chat starts |
+| VS Code with GitHub Copilot | A marked block in `~/.copilot/copilot-instructions.md`, or its own file under `~/.copilot/instructions/` if that file is a link; skills in `~/.copilot/skills` | Always-on instructions |
+
+Hooks run through a small launcher, `~/.agent-coach/bin/coach-hook`, which finds a working Python 3 each time. They keep working after a Python upgrade.
 
 Restart each tool after installing.
 
