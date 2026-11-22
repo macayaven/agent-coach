@@ -4,12 +4,17 @@
 #
 # The agent reads web pages, which could try to manipulate it, so the work is
 # split into two jobs:
-#   refresh  has the API key, but can't write to the repository or run shell commands.
-#   open-pr  can write to the repository, but runs no agent and never sees the API key.
+#   refresh  can call the Claude API, but can't write to the repository or run shell commands.
+#   open-pr  can write to the repository, but runs no agent and has no access to the Claude API.
 #            It accepts only Markdown files under references/ and runs the tests.
 #
-# Setup: add an ANTHROPIC_API_KEY repository secret (Settings > Secrets and
-# variables > Actions). Use a dedicated key with a low spend limit.
+# Setup, one of:
+#   Keyless (preferred): in the Claude Console, connect a GitHub Actions workload for
+#     repo:<owner>/<repo>:ref:refs/heads/main, then set the repository variables
+#     ANTHROPIC_FEDERATION_RULE_ID, ANTHROPIC_ORGANIZATION_ID, ANTHROPIC_SERVICE_ACCOUNT_ID
+#     and, if the rule covers several workspaces, ANTHROPIC_WORKSPACE_ID.
+#   API key: add an ANTHROPIC_API_KEY repository secret, from a dedicated key with a
+#     low spend limit. It is used only while the variables above are not set.
 name: Refresh techniques
 
 on:
@@ -29,6 +34,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+      id-token: write # lets the action prove to the Claude API which workflow is calling
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,7 +46,13 @@ jobs:
 
       - uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67 # v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Keyless sign-in. No stored secret: the Claude API checks this workflow's identity.
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          anthropic_service_account_id: ${{ vars.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          anthropic_workspace_id: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+          # A stored key would override keyless sign-in, so pass it only when keyless isn't set up.
+          anthropic_api_key: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID == '' && secrets.ANTHROPIC_API_KEY || '' }}
           # The job's own read-only token. Without it the action asks for an OIDC token.
           github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
@@ -50,7 +62,11 @@ jobs:
             --permission-mode default
             --max-turns 120
             --allowedTools "Read,Glob,Grep,Edit,Write,WebFetch(domain:code.claude.com),WebFetch(domain:www.anthropic.com),WebFetch(domain:anthropic.com),WebFetch(domain:learn.chatgpt.com),WebFetch(domain:developers.openai.com),WebFetch(domain:openai.com),WebFetch(domain:antigravity.google),WebFetch(domain:developers.googleblog.com),WebFetch(domain:cursor.com),WebFetch(domain:docs.github.com),WebFetch(domain:github.blog),WebFetch(domain:raw.githubusercontent.com),WebFetch(domain:agents.md),WebFetch(domain:agentskills.io),WebFetch(domain:simonwillison.net)"
-            --disallowedTools "Bash,WebSearch,Read(//proc/**)"
+            --disallowedTools "Bash,WebSearch,Read(//proc/**),Read(//home/runner/work/_temp/**)"
+
+      - name: Show why the agent failed
+        if: failure()
+        run: python3 .github/scripts/show-agent-error.py "$RUNNER_TEMP/claude-execution-output.json"
 
       - name: Collect the refreshed files
         run: |
