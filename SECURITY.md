@@ -27,6 +27,15 @@ The refresh agent reads web pages, and a page could try to manipulate it. The wo
 
 One risk remains: a manipulated agent could try to leak the API key to one of the allowed domains. Use a dedicated API key with a low spend limit for the `ANTHROPIC_API_KEY` secret, so a leak is cheap and easy to revoke.
 
+## Settings these protections depend on
+
+Several protections are repository settings, not files, so they don't travel with a clone or fork. The owner applies them once, under the repository's **Settings**:
+
+1. **Rules → Rulesets → New ruleset → Import a ruleset.** Choose `.github/rulesets/protect-main.json`. If the import is refused, create a branch ruleset for the default branch by hand: restrict deletions, block force pushes, and require a pull request before merging with zero required approvals.
+2. **Actions → General → Workflow permissions.** Select read-only permissions, and tick "Allow GitHub Actions to create and approve pull requests" so the refresh can open its pull request.
+3. **Secrets and variables → Actions.** Add the `ANTHROPIC_API_KEY` secret.
+4. **Advanced Security.** Turn on private vulnerability reporting, and confirm secret scanning and push protection are on.
+
 ## If you fork or install someone else's copy
 
 Read `hooks/coach_hook.py`, `bin/` and `skills/agent-coach/SKILL.md` first. They are short.
