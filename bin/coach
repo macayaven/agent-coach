@@ -40,6 +40,10 @@ def main(argv):
             pull = subprocess.run(["git", "-C", str(coachlib.REPO), "pull", "--ff-only"], capture_output=True, text=True)
             if pull.returncode != 0:
                 print(f"Couldn't pull the latest version, so refreshing from the local copy:\n  {pull.stderr.strip()}", file=sys.stderr)
+        # The pull may have replaced this program's own files, so finish in a
+        # fresh process that runs the new code instead of the old code in memory.
+        return subprocess.run([sys.executable, str(Path(__file__).resolve()), "finish-update"]).returncode
+    elif cmd == "finish-update":
         adapters.update()
         print(coachlib.status_line())
     elif cmd == "refresh":
