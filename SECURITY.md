@@ -21,7 +21,7 @@ So anyone who can change `main` can change what your agents are told and what ru
 
 The refresh agent reads web pages, and a page could try to manipulate it. The workflow limits what a manipulated agent could do:
 
-- The agent's job can call the Claude API, but it can't write to the repository, can't run shell commands, and can fetch only from the listed source domains.
+- The agent's job can call the Claude API, but it can't write to the repository, can't run shell commands, and can fetch only from the listed source domains. The agent is started without the means to request sign-in tokens and can't read the folder where the current one is kept.
 - A separate job opens the pull request. It runs no agent and has no access to the Claude API. It accepts only small Markdown files under `skills/agent-coach/references/` and runs the tests first.
 - A person reviews and merges the pull request. Read the changes to `index.md` closely, because agents treat that file as instructions.
 
@@ -33,7 +33,7 @@ Several protections are repository settings, not files, so they don't travel wit
 
 1. **Rules → Rulesets → New ruleset → Import a ruleset.** Choose `.github/rulesets/protect-main.json`. If the import is refused, create a branch ruleset for the default branch by hand: restrict deletions, block force pushes, and require a pull request before merging with zero required approvals.
 2. **Actions → General → Workflow permissions.** Select read-only permissions, and tick "Allow GitHub Actions to create and approve pull requests" so the refresh can open its pull request.
-3. **Secrets and variables → Actions.** Add the `ANTHROPIC_*` variables for keyless sign-in, or the `ANTHROPIC_API_KEY` secret. The README's "Keeping it current" section has the steps.
+3. **Secrets and variables → Actions.** Add the `ANTHROPIC_*` variables for keyless sign-in, or the `ANTHROPIC_API_KEY` secret. The README's "Set up the monthly refresh" section has the steps.
 4. **Advanced Security.** Turn on private vulnerability reporting, and confirm secret scanning and push protection are on.
 
 ## If you fork or install someone else's copy

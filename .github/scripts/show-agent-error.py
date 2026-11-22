@@ -10,7 +10,8 @@ import sys
 from pathlib import Path
 
 HINTS = [
-    ("credit balance", "The API account has no credit. Add credit in the Claude Console under Billing, then rerun."),
+    ("credit balance", "The API account has no usable credit. Check the Claude Console's Billing page. A Claude plan's "
+                       "monthly API credits cover this workflow only when they are linked to this Console organization."),
     ("invalid api key", "The API rejected the key. Put a valid Claude API key (it starts with sk-ant-api) in the ANTHROPIC_API_KEY secret."),
     ("401", "The API rejected the sign-in. With keyless sign-in, check the four ANTHROPIC_* repository variables and that the "
             "federation rule matches this repository's main branch; the Claude Console's Workload identity history shows why. "

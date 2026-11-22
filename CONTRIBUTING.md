@@ -30,6 +30,7 @@ The coach is loaded into every session, so size matters. The tests enforce a bud
 ```bash
 python3 -m unittest discover -s tests     # logic, installers, budgets
 bash tests/test_accept_refresh.sh         # the refresh acceptance script
+bash tests/test_run_refresh_agent.sh      # the refresh agent's sign-in handling
 claude plugin validate .                  # plugin manifests
 claude plugin eval . --runs 3 --ablation none   # behavior; makes real model calls
 ```
