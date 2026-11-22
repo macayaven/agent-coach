@@ -1,6 +1,7 @@
 import datetime
 import importlib.util
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -66,11 +67,13 @@ class ModeTests(IsolatedState):
 
 
 class RenderTests(unittest.TestCase):
-    def test_render_fills_every_placeholder(self):
+    def test_render_carries_only_the_current_modes_rules(self):
         text = coachlib.render("suggest")
-        self.assertIn("Current mode: suggest", text)
-        self.assertIn(str(coachlib.PLAYBOOK), text)
-        self.assertIn("## force", text)
+        self.assertIn("suggest mode", text)
+        self.assertIn(str(coachlib.SKILL_DIR), text)
+        self.assertIn("## suggest", text)
+        self.assertIn("## Always", text)
+        self.assertNotIn("## force", text)
         self.assertNotIn("description:", text)  # skill frontmatter is stripped
 
     def test_staleness(self):
@@ -79,8 +82,37 @@ class RenderTests(unittest.TestCase):
         self.assertTrue(coachlib.is_stale(datetime.date(2026, 8, 1), today))
         self.assertTrue(coachlib.is_stale(None, today))
 
-    def test_shipped_playbook_has_a_reviewed_date(self):
-        self.assertIsNotNone(coachlib.playbook_reviewed())
+    def test_shipped_index_has_a_reviewed_date(self):
+        self.assertIsNotNone(coachlib.techniques_reviewed())
+
+
+class ContextBudgetTests(unittest.TestCase):
+    """The coach must stay cheap. Budgets are in estimated tokens (chars / 4)."""
+
+    def size(self, path):
+        return coachlib.estimate_tokens(path.read_text(encoding="utf-8"))
+
+    def test_always_on_rules(self):
+        self.assertLessEqual(coachlib.estimate_tokens(coachlib.render("force")), 450)
+        self.assertLessEqual(coachlib.estimate_tokens(coachlib.render("suggest")), 350)
+        self.assertLessEqual(coachlib.estimate_tokens(coachlib.render_off_stub()), 100)
+
+    def test_per_prompt_reminders_are_one_short_line(self):
+        for text in coachlib.REMINDERS.values():
+            self.assertLessEqual(coachlib.estimate_tokens(text), 25)
+            self.assertNotIn("\n", text)
+
+    def test_reference_files(self):
+        self.assertLessEqual(self.size(coachlib.INDEX), 1300)
+        self.assertLessEqual(self.size(coachlib.RULES), 700)
+        for path in coachlib.TECHNIQUES.glob("*.md"):
+            self.assertLessEqual(self.size(path), 600, path.name)
+
+    def test_index_and_technique_files_match(self):
+        listed = set(re.findall(r"^- `([\w-]+)`", coachlib.INDEX.read_text(encoding="utf-8"), re.MULTILINE))
+        files = {p.stem for p in coachlib.TECHNIQUES.glob("*.md")}
+        self.assertEqual(listed, files)
+        self.assertGreaterEqual(len(files), 10)
 
 
 class ClaudeHookTests(IsolatedState):
@@ -88,12 +120,13 @@ class ClaudeHookTests(IsolatedState):
         out = coach_hook.handle("claude", "session-start", {"source": "startup"})
         ctx = out["hookSpecificOutput"]["additionalContext"]
         self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "SessionStart")
-        self.assertIn("Current mode: force", ctx)
+        self.assertIn("force mode", ctx)
+        self.assertIn("## force", ctx)
 
     def test_prompt_gets_mode_reminder(self):
         coachlib.set_mode("suggest")
         out = coach_hook.handle("claude", "prompt", {"prompt": "fix the login bug"})
-        self.assertIn("agent-coach · suggest", out["hookSpecificOutput"]["additionalContext"])
+        self.assertIn("agent-coach: suggest", out["hookSpecificOutput"]["additionalContext"])
 
     def test_toggle_is_handled_without_the_model(self):
         out = coach_hook.handle("claude", "prompt", {"prompt": "coach off"})
@@ -120,7 +153,7 @@ class OtherToolHookTests(IsolatedState):
 
     def test_cursor_session_start_adds_context(self):
         out = coach_hook.handle("cursor", "session-start", {"session_id": "x"})
-        self.assertIn("Current mode: force", out["additional_context"])
+        self.assertIn("force mode", out["additional_context"])
 
     def test_cursor_switch_persists_and_reaches_the_model(self):
         out = coach_hook.handle("cursor", "prompt", {"prompt": "coach off"})

@@ -415,16 +415,21 @@ def doctor():
     for name, adapter in ADAPTERS.items():
         state = "installed" if name in done else ("detected" if adapter.detect() else "not found")
         yield f"  {name:<12} {state:<10} {adapter.__doc__.strip()}"
+    yield "Estimated context cost (tokens):"
+    for label, tokens in coachlib.context_cost().items():
+        yield f"  {tokens:>5}  {label}"
 
 
 def pack(out: Path = None) -> Path:
     """Zip the agent-coach skill for upload to claude.ai, the Gemini app or ChatGPT."""
     out = out or REPO / "dist" / "agent-coach-skill.zip"
     out.parent.mkdir(parents=True, exist_ok=True)
-    skill = REPO / "skills" / "agent-coach"
+    skill = coachlib.SKILL_DIR
+    files = [skill / "SKILL.md", skill / "references" / "index.md", skill / "references" / "retired.md"]
+    files += sorted(coachlib.TECHNIQUES.glob("*.md"))
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        for rel in ("SKILL.md", "references/playbook.md"):
-            z.write(skill / rel, f"agent-coach/{rel}")
+        for path in files:
+            z.write(path, f"agent-coach/{path.relative_to(skill).as_posix()}")
     return out
 
 

@@ -1,0 +1,13 @@
+# Retired or demoted practices, and why
+
+- **ALL-CAPS "IMPORTANT/ALWAYS/NEVER" in instructions.** Current models over-apply emphasized rules. Use a hook or deny rule, or shorten the file. ([Claude Code best practices](https://code.claude.com/docs/en/best-practices))
+- **"Think hard", "be thorough".** Reasoning effort is a setting now (`/effort` in Claude Code, reasoning effort in Codex, `/boost` in Antigravity). ([Claude Code best practices](https://code.claude.com/docs/en/best-practices), [Codex prompting](https://learn.chatgpt.com/docs/prompting))
+- **"Keep going, don't be lazy."** It causes over-work. Use a goal mode or a Stop hook with a check. ([Claude Code best practices](https://code.claude.com/docs/en/best-practices), [Codex long-running work & `/goal`](https://learn.chatgpt.com/docs/long-running-work))
+- **Treating context size as the main constraint.** Reset for focus and cost instead. ([Claude Code best practices](https://code.claude.com/docs/en/best-practices))
+- **Subagents to "save context" or get a better answer.** Use them for parallel work, noisy output, review and tool restriction. ([Claude Code best practices](https://code.claude.com/docs/en/best-practices))
+- **Prescriptive "how to" rules for frontier models.** Say what something is for, not how to do it. ([The components of agent memory (2026-11-06)](https://www.anthropic.com/engineering/components-of-agent-memory), [Cursor: towards self-driving codebases (2026-02-05)](https://cursor.com/blog/self-driving-codebases))
+- **Per-action approval prompts as the main safety layer.** Containment comes first. ([Claude Code best practices](https://code.claude.com/docs/en/best-practices), [How we contain Claude across products (2026-05-25)](https://www.anthropic.com/engineering/how-we-contain-claude))
+- **Codex custom prompts.** Replaced by skills. ([Codex best practices](https://learn.chatgpt.com/guides/best-practices))
+- **Gemini CLI for consumers.** Replaced by Antigravity CLI (`agy`); extensions became plugins. ([Gemini CLI → Antigravity CLI (2026-05-19)](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/))
+- **Fixing bad output with follow-up prompts.** Revert and re-plan. ([Cursor: best practices for coding with agents (2026-01-09)](https://cursor.com/blog/agent-best-practices), [Cursor: dynamic planning agents (2026-01-30)](https://cursor.com/blog/dynamic-planning-agents))
+- **Frozen upfront specs.** Use living plans; spec phases are optional. ([Cursor: dynamic planning agents (2026-01-30)](https://cursor.com/blog/dynamic-planning-agents), [GitHub Spec Kit](https://github.com/github/spec-kit))

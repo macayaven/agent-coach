@@ -1,6 +1,6 @@
 # Sources the monthly refresh re-checks
 
-Official lab and tool-maker sources come first; practitioner sources only support them. Where a site has a `.md` or `llms.txt` version, fetch that. Many of these pages are living docs without dates, so compare their content with what the playbook says rather than relying on a publish date.
+Official lab and tool-maker sources come first; practitioner sources only support them. Where a site has a `.md` or `llms.txt` version, fetch that. Many of these pages are living docs without dates, so compare their content with what the technique files say rather than relying on a publish date.
 
 ## Anthropic
 - https://code.claude.com/docs/en/best-practices.md (check its "What you can stop doing" table)

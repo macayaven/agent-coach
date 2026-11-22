@@ -12,7 +12,7 @@ It has three modes:
 
 In any mode, say `why` to get the full rationale for a technique, with its sources. In force mode, pure questions and tiny edits go straight through, and `coach skip` or `urgent` bypasses coaching for one request.
 
-The techniques come from a sourced [playbook](skills/agent-coach/references/playbook.md) that is refreshed every month (see [Keeping it current](#keeping-it-current)).
+The techniques come from a sourced [catalogue](skills/agent-coach/references/index.md) that is refreshed every month (see [Keeping it current](#keeping-it-current)). The coach is built to stay cheap in context (see [Context cost](#context-cost)).
 
 ## Install
 
@@ -60,7 +60,7 @@ Chat apps can't run the installer. Do it by hand, once per app:
 2. Add this line to the app's custom instructions:
    `Use the agent-coach skill on every request. Mode: force, unless I say "coach suggest" or "coach off".`
 
-If the app has no skill upload, create a project, add `SKILL.md` and `playbook.md` from the zip as project files, and put the same line in the project's instructions.
+If the app has no skill upload, create a project, add `SKILL.md` and `references/index.md` from the zip as project files, and put the same line in the project's instructions.
 
 ## Switch modes
 
@@ -80,11 +80,25 @@ The mode is saved once for all tools, in `~/.agent-coach/state/mode`.
 
 ## Keeping it current
 
-Practices change quickly, so the playbook carries a `reviewed:` date and each technique carries a `verified:` date.
+Practices change quickly, so the technique index carries a `reviewed:` date and each technique file carries a `verified:` date.
 
-- **Monthly refresh.** A GitHub Action (`.github/workflows/refresh-playbook.yml`) has an agent re-read the official sources in [`sources.md`](skills/agent-coach/references/sources.md), update the playbook following [`REFRESH.md`](skills/agent-coach/references/REFRESH.md), and open a pull request. You review and merge it. To enable it, add an `ANTHROPIC_API_KEY` secret to the repository (or switch the workflow to `claude_code_oauth_token`), and allow GitHub Actions to create pull requests.
+- **Monthly refresh.** A GitHub Action (`.github/workflows/refresh-techniques.yml`) has an agent re-read the official sources in [`sources.md`](skills/agent-coach/references/sources.md), update the techniques following [`REFRESH.md`](skills/agent-coach/references/REFRESH.md), and open a pull request. You review and merge it. To enable it, add an `ANTHROPIC_API_KEY` secret to the repository (or switch the workflow to `claude_code_oauth_token`), and allow GitHub Actions to create pull requests.
 - **Getting the update.** Run `coach update` on each machine. It pulls the repository and refreshes every installed tool.
-- **Staleness warning.** If the playbook is more than 60 days old, the coach tells you once per session to update.
+- **Staleness warning.** If the techniques were last reviewed more than 60 days ago, the coach tells you once per session to update.
+
+## Context cost
+
+The coach loads as little as it can, and only when it's needed. Figures are estimates in tokens (about four characters each); run `coach doctor` to see the current ones.
+
+| When | Tokens | What loads |
+|---|---|---|
+| Start of each session | about 410 in `force`, 290 in `suggest` | The rules for the current mode only |
+| Each prompt (Claude Code, Codex, Gemini CLI) | under 20 | A one-line mode reminder |
+| First coached request in a session | about 1,150 | The technique index: when each technique applies, and its redo skeleton |
+| Each time you ask `why` | up to about 470 | The one technique file with the rationale and sources |
+| Mode `off` | 0 with hooks; about 70 in tools that use an instruction file | A stub that says how to turn the coach back on |
+
+The unit tests enforce these budgets, so a refresh can't quietly make the coach heavier. An eval case also checks that a normal coaching turn reads the index and no technique files.
 
 ## Test it
 
@@ -93,7 +107,7 @@ python3 -m unittest discover -s tests        # installer, hooks, mode logic
 claude plugin eval . --runs 1 --ablation none   # behavior in Claude Code (makes real model calls)
 ```
 
-The eval suite in `evals/` checks that force mode asks for a redo, suggest mode does the task and adds a note, plain questions are answered directly, and off stays quiet.
+The eval suite in `evals/` checks that force mode asks for a redo without loading technique files, suggest mode does the task and adds a note, plain questions are answered directly, and off stays quiet.
 
 ## Limits
 
@@ -106,7 +120,9 @@ The eval suite in `evals/` checks that force mode asks for a redo, suggest mode 
 
 ```
 skills/agent-coach/SKILL.md              the coaching rules (single source for every tool)
-skills/agent-coach/references/           playbook, sources, refresh procedure
+skills/agent-coach/references/index.md   technique index, read once per coached session
+skills/agent-coach/references/techniques/  one file per technique, read only on `why`
+skills/agent-coach/references/           also: retired practices, sources, refresh procedure
 skills/coach/SKILL.md                    /coach command
 hooks/                                   per-prompt and session-start hook
 bin/coach                                CLI: modes, install, update, pack

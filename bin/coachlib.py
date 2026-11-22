@@ -10,27 +10,21 @@ DEFAULT_MODE = "force"
 STALE_AFTER_DAYS = 60
 
 REPO = Path(__file__).resolve().parent.parent
-RULES = REPO / "skills" / "agent-coach" / "SKILL.md"
-PLAYBOOK = REPO / "skills" / "agent-coach" / "references" / "playbook.md"
+SKILL_DIR = REPO / "skills" / "agent-coach"
+RULES = SKILL_DIR / "SKILL.md"
+INDEX = SKILL_DIR / "references" / "index.md"
+TECHNIQUES = SKILL_DIR / "references" / "techniques"
 
 # "coach off", "/coach suggest", "/agent-coach:coach force", "coach status"
 TOGGLE_RE = re.compile(
     r"^\s*/?(?:agent-coach:)?coach\s+(force|suggest|off|on|status)\s*$", re.IGNORECASE
 )
 
+# Added to every prompt by hooks, so keep these to one short line: the rules
+# themselves are already in context from session start.
 REMINDERS = {
-    "force": (
-        "[agent-coach · force] Before acting on this request, apply the force loop: "
-        "diagnose it against the playbook, name 1-3 techniques, and ask me to redo it "
-        "using a skeleton. Don't execute yet. Exempt: pure questions, tiny edits, "
-        "`coach skip`, `urgent`. If this message is my redo of an earlier request, "
-        "grade it briefly, then execute it."
-    ),
-    "suggest": (
-        "[agent-coach · suggest] Do the request as asked, then add a Coach note of at "
-        "most 5 lines: 1-2 techniques and a reusable rewrite of my request. Skip the "
-        "note if nothing meaningful applies."
-    ),
+    "force": "[agent-coach: force] Coach before acting, unless this is exempt or my redo.",
+    "suggest": "[agent-coach: suggest] Do it, then end with the Coach note.",
 }
 
 
@@ -68,9 +62,9 @@ def parse_toggle(prompt: str):
     return "force" if word == "on" else word
 
 
-def playbook_reviewed(playbook: Path = PLAYBOOK):
+def techniques_reviewed(index: Path = INDEX):
     try:
-        head = playbook.read_text(encoding="utf-8")[:500]
+        head = index.read_text(encoding="utf-8")[:500]
     except OSError:
         return None
     m = re.search(r"^reviewed:\s*(\d{4}-\d{2}-\d{2})", head, re.MULTILINE)
@@ -84,27 +78,26 @@ def is_stale(reviewed, today=None) -> bool:
     return (today - reviewed).days > STALE_AFTER_DAYS
 
 
-def rules_body() -> str:
-    """The coaching rules: the agent-coach skill without its frontmatter."""
+def rules_sections() -> dict:
+    """The agent-coach skill's `## ` sections, keyed by heading."""
     text = RULES.read_text(encoding="utf-8")
     if text.startswith("---"):
         text = text.split("---", 2)[2]
-    return text.strip()
+    parts = re.split(r"^## (.+)$", text, flags=re.MULTILINE)
+    return {parts[i].strip(): parts[i + 1].strip() for i in range(1, len(parts), 2)}
 
 
-def render(mode: str, playbook_path: Path = PLAYBOOK) -> str:
-    """The always-on instructions: a header with the mode and playbook path, then the rules."""
-    reviewed = playbook_reviewed(playbook_path)
-    header = (
-        f"Agent Coach is active. Current mode: {mode}. "
-        f"Playbook: `{playbook_path}` (reviewed {reviewed.isoformat() if reviewed else 'unknown'})."
-    )
+def render(mode: str) -> str:
+    """The always-on instructions: only the current mode's rules, to keep context small."""
+    sections = rules_sections()
+    reviewed = techniques_reviewed()
+    header = f"Agent Coach is active in {mode} mode. Its skill folder is `{SKILL_DIR}`."
     if is_stale(reviewed):
         header += (
-            f" The playbook is more than {STALE_AFTER_DAYS} days old: tell me once this session "
-            "to run `coach update`, and take extra care to flag practices that may have changed."
+            f" Its techniques were last reviewed over {STALE_AFTER_DAYS} days ago: tell me once "
+            "this session to run `coach update`, and flag practices that may have changed."
         )
-    return header + "\n\n" + rules_body() + "\n"
+    return f"{header}\n\n## {mode}\n\n{sections[mode]}\n\n## Always\n\n{sections['Always']}\n"
 
 
 def render_off_stub() -> str:
@@ -116,10 +109,29 @@ def render_off_stub() -> str:
     )
 
 
+def estimate_tokens(text: str) -> int:
+    """Rough token count (about 4 characters per token). Good enough for budgets."""
+    return round(len(text) / 4)
+
+
+def context_cost() -> dict:
+    """Estimated tokens the coach adds to context, by when they are spent."""
+    technique_sizes = [estimate_tokens(p.read_text(encoding="utf-8")) for p in TECHNIQUES.glob("*.md")]
+    return {
+        "every session, force": estimate_tokens(render("force")),
+        "every session, suggest": estimate_tokens(render("suggest")),
+        "every session, off (instruction-file tools)": estimate_tokens(render_off_stub()),
+        "every prompt, force (hook tools)": estimate_tokens(REMINDERS["force"]),
+        "every prompt, suggest (hook tools)": estimate_tokens(REMINDERS["suggest"]),
+        "once per coached session (technique index)": estimate_tokens(INDEX.read_text(encoding="utf-8")),
+        "each `why` (largest technique file)": max(technique_sizes),
+    }
+
+
 def status_line() -> str:
-    reviewed = playbook_reviewed()
+    reviewed = techniques_reviewed()
     age = "unknown"
     if reviewed:
         age = f"{reviewed.isoformat()} ({(datetime.date.today() - reviewed).days} days ago)"
     note = " — stale, run `coach update`" if is_stale(reviewed) else ""
-    return f"agent-coach mode: {get_mode()} · playbook reviewed {age}{note}"
+    return f"agent-coach mode: {get_mode()} · techniques reviewed {age}{note}"

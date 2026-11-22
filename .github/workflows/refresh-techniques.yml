@@ -1,11 +1,11 @@
 # Monthly: an agent re-reads the sources in skills/agent-coach/references/sources.md,
-# updates the playbook, and opens a pull request. A human reviews and merges it;
+# updates the techniques, and opens a pull request. A human reviews and merges it;
 # nothing reaches users until then. Users then get it with `coach update`
 # (or their tool's plugin/extension update).
 #
 # Setup: add an ANTHROPIC_API_KEY repository secret, and allow GitHub Actions to
 # create pull requests (Settings > Actions > General > Workflow permissions).
-name: Refresh playbook
+name: Refresh techniques
 
 on:
   schedule:
@@ -31,15 +31,15 @@ jobs:
           prompt: |
             Follow skills/agent-coach/references/REFRESH.md exactly. Today's date is the date of this run.
 
-      - name: Check the refreshed playbook still passes the tests
+      - name: Check the refreshed techniques still pass the tests
         run: python3 -m unittest discover -s tests -v
 
       - uses: peter-evans/create-pull-request@v7
         with:
-          branch: playbook-refresh
+          branch: technique-refresh
           delete-branch: true
-          title: "Playbook refresh (automated)"
-          commit-message: "Refresh agentic-coding playbook from sources"
+          title: "Technique refresh (automated)"
+          commit-message: "Refresh agentic-coding techniques from sources"
           body-path: .refresh-summary.md
           add-paths: |
-            skills/agent-coach/references/*.md
+            skills/agent-coach/references/**

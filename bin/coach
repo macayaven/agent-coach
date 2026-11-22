@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """coach: switch agent-coach modes and install it into your coding agents.
 
-  coach                       show mode and playbook freshness
+  coach                       show mode and how fresh the techniques are
   coach force|suggest|off     switch mode everywhere (also: coach on = force)
   coach install [TOOL ...]    install adapters (default: every tool detected)
   coach uninstall [TOOL ...]  remove adapters
-  coach update                pull the latest playbook and re-render adapters
+  coach update                pull the latest techniques and refresh every tool
   coach render [MODE]         print the always-on instructions (for chat apps)
   coach pack                  build dist/agent-coach-skill.zip to upload to chat apps
-  coach doctor                show what is installed where
+  coach doctor                show what is installed where, and the context cost
 """
 
 import subprocess

@@ -63,7 +63,7 @@ class InstallTests(FakeHome):
             {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "mine.sh"}]}]}}))
         adapters.install(["codex"])
         adapters.install(["codex"])  # twice: must not duplicate
-        self.assertIn("Current mode: force", self.read(".codex/AGENTS.md"))
+        self.assertIn("active in force mode", self.read(".codex/AGENTS.md"))
         groups = json.loads(self.read(".codex/hooks.json"))["hooks"]["UserPromptSubmit"]
         self.assertEqual(len(groups), 2)
         self.assertEqual(groups[0]["hooks"][0]["command"], "mine.sh")
@@ -86,8 +86,8 @@ class InstallTests(FakeHome):
         adapters.install(["antigravity", "vscode"])
         coachlib.set_mode("suggest")
         adapters.refresh()
-        self.assertIn("Current mode: suggest", self.read(".gemini/GEMINI.md"))
-        self.assertIn("Current mode: suggest", self.read(".copilot/copilot-instructions.md"))
+        self.assertIn("active in suggest mode", self.read(".gemini/GEMINI.md"))
+        self.assertIn("active in suggest mode", self.read(".copilot/copilot-instructions.md"))
         coachlib.set_mode("off")
         adapters.refresh()
         self.assertIn("installed but off", self.read(".gemini/GEMINI.md"))
@@ -127,7 +127,11 @@ class PackTests(FakeHome):
         import zipfile
         out = adapters.pack(self.home / "skill.zip")
         with zipfile.ZipFile(out) as z:
-            self.assertEqual(sorted(z.namelist()), ["agent-coach/SKILL.md", "agent-coach/references/playbook.md"])
+            names = z.namelist()
+            self.assertTrue(all(n.startswith("agent-coach/") for n in names))
+            self.assertIn("agent-coach/references/index.md", names)
+            self.assertIn("agent-coach/references/techniques/03-verification.md", names)
+            self.assertFalse(any("REFRESH" in n or "sources" in n for n in names))
             front = z.read("agent-coach/SKILL.md").decode().split("---")[1]
         keys = {line.split(":")[0] for line in front.strip().splitlines()}
         self.assertLessEqual(keys, {"name", "description", "license", "compatibility", "metadata", "allowed-tools"})
