@@ -52,6 +52,10 @@ jobs:
             --allowedTools "Read,Glob,Grep,Edit,Write,WebFetch(domain:code.claude.com),WebFetch(domain:www.anthropic.com),WebFetch(domain:anthropic.com),WebFetch(domain:learn.chatgpt.com),WebFetch(domain:developers.openai.com),WebFetch(domain:openai.com),WebFetch(domain:antigravity.google),WebFetch(domain:developers.googleblog.com),WebFetch(domain:cursor.com),WebFetch(domain:docs.github.com),WebFetch(domain:github.blog),WebFetch(domain:raw.githubusercontent.com),WebFetch(domain:agents.md),WebFetch(domain:agentskills.io),WebFetch(domain:simonwillison.net)"
             --disallowedTools "Bash,WebSearch,Read(//proc/**)"
 
+      - name: Show why the agent failed
+        if: failure()
+        run: python3 .github/scripts/show-agent-error.py "$RUNNER_TEMP/claude-execution-output.json"
+
       - name: Collect the refreshed files
         run: |
           mkdir -p out
