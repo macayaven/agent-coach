@@ -87,6 +87,20 @@ The mode is saved once for all tools, in `~/.agent-coach/state/mode`.
 - **Claude Code, Codex, Gemini CLI:** the hook handles the command instantly, without calling the model. `/coach off` also works.
 - **Other tools:** the agent applies the new mode for the current session and runs `coach <mode>` to save it. New sessions read the saved mode.
 
+### Turn off the per-prompt reminder
+
+In Claude Code, Codex and Gemini CLI, a hook adds a one-line mode reminder to every prompt, so coaching doesn't fade in long sessions. If your own rules forbid hooks that add context to every prompt, turn it off:
+
+```
+coach reminder off     # or: coach reminder on
+```
+
+- **Codex, Gemini CLI, Cursor:** the installer removes the coach's per-prompt hook entry, so nothing runs per prompt. Codex asks you to trust its hooks again.
+- **Claude Code:** a plugin's hooks can't be turned off one at a time, so the hook still runs and adds nothing. The cost is one short process per prompt, with no tokens.
+- **What you lose:** the reminder itself. Where the per-prompt hook is gone, typed `coach <mode>` reaches the agent, which applies it and runs `coach <mode>` to save it.
+
+The session-start rules don't change.
+
 ## Audit your setup
 
 Per-request coaching only sees the prompt. `coach audit` looks at the setup your agent works in: the instruction files it loads, hooks, permissions, MCP servers, plugins, and whether the repo has tests and evals. v0 covers Claude Code.
@@ -146,7 +160,7 @@ The coach loads as little as it can, and only when it's needed. Figures are esti
 | When | Tokens | What loads |
 |---|---|---|
 | Start of each session | about 410 in `force`, 290 in `suggest` | The rules for the current mode only |
-| Each prompt (Claude Code, Codex, Gemini CLI) | under 20 | A one-line mode reminder |
+| Each prompt (Claude Code, Codex, Gemini CLI) | under 20; 0 with `coach reminder off` | A one-line mode reminder |
 | First coached request in a session | about 1,150 | The technique index: when each technique applies, and its redo skeleton |
 | Each time you ask `why` | up to about 470 | The one technique file with the rationale and sources |
 | Mode `off` | 0 with hooks; about 70 in tools that use an instruction file | A stub that says how to turn the coach back on |

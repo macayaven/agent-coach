@@ -20,6 +20,10 @@ TOGGLE_RE = re.compile(
     r"^\s*/?(?:agent-coach:)?coach\s+(force|suggest|off|on|status)\s*$", re.IGNORECASE
 )
 
+# "coach reminder off", "/coach reminder on": the optional per-prompt reminder line.
+REMINDER_RE = re.compile(r"^\s*/?(?:agent-coach:)?coach\s+reminder\s+(on|off)\s*$", re.IGNORECASE)
+REMINDER_STATES = ("on", "off")
+
 # "coach audit", "/coach audit", "/agent-coach:coach audit --repo x": the hook points
 # the agent at the coach-audit skill, in any mode.
 AUDIT_RE = re.compile(r"^\s*/?(?:agent-coach:)?coach\s+audit(?:\s.*)?$", re.IGNORECASE | re.DOTALL)
@@ -65,6 +69,32 @@ def set_mode(mode: str) -> str:
     state_dir().mkdir(parents=True, exist_ok=True)
     (state_dir() / "mode").write_text(mode + "\n")
     return mode
+
+
+def get_reminder() -> str:
+    """'on' (default) or 'off': whether hooks add the one-line mode reminder to each prompt."""
+    env = os.environ.get("AGENT_COACH_REMINDER") or os.environ.get("EVAL_AGENT_COACH_REMINDER")
+    if env in REMINDER_STATES:
+        return env
+    try:
+        saved = (state_dir() / "reminder").read_text().strip()
+    except OSError:
+        return "on"
+    return saved if saved in REMINDER_STATES else "on"
+
+
+def set_reminder(value: str) -> str:
+    if value not in REMINDER_STATES:
+        raise ValueError(f"unknown reminder setting {value!r}; expected on or off")
+    state_dir().mkdir(parents=True, exist_ok=True)
+    (state_dir() / "reminder").write_text(value + "\n")
+    return value
+
+
+def parse_reminder(prompt: str):
+    """Return 'on' | 'off' if the prompt is `coach reminder on|off`."""
+    m = REMINDER_RE.match(prompt or "")
+    return m.group(1).lower() if m else None
 
 
 def parse_toggle(prompt: str):
@@ -131,12 +161,13 @@ def estimate_tokens(text: str) -> int:
 def context_cost() -> dict:
     """Estimated tokens the coach adds to context, by when they are spent."""
     technique_sizes = [estimate_tokens(p.read_text(encoding="utf-8")) for p in TECHNIQUES.glob("*.md")]
+    reminder = get_reminder() == "on"
     return {
         "every session, force": estimate_tokens(render("force")),
         "every session, suggest": estimate_tokens(render("suggest")),
         "every session, off (instruction-file tools)": estimate_tokens(render_off_stub()),
-        "every prompt, force (hook tools)": estimate_tokens(REMINDERS["force"]),
-        "every prompt, suggest (hook tools)": estimate_tokens(REMINDERS["suggest"]),
+        "every prompt, force (hook tools)": estimate_tokens(REMINDERS["force"]) if reminder else 0,
+        "every prompt, suggest (hook tools)": estimate_tokens(REMINDERS["suggest"]) if reminder else 0,
         "once per coached session (technique index)": estimate_tokens(INDEX.read_text(encoding="utf-8")),
         "each `why` (largest technique file)": max(technique_sizes),
     }
@@ -148,4 +179,5 @@ def status_line() -> str:
     if reviewed:
         age = f"{reviewed.isoformat()} ({(datetime.date.today() - reviewed).days} days ago)"
     note = " — stale, run `coach update`" if is_stale(reviewed) else ""
-    return f"agent-coach mode: {get_mode()} · techniques reviewed {age}{note}"
+    reminder = " · per-prompt reminder off" if get_reminder() == "off" else ""
+    return f"agent-coach mode: {get_mode()}{reminder} · techniques reviewed {age}{note}"

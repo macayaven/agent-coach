@@ -153,7 +153,7 @@ So in v0 the skill reads the latest `/insights` report, if one exists and is und
 
 ## Related change: optional per-prompt reminder
 
-This ships as its own pull request, before v0.
+Built on `feat/prompt-reminder`, its own pull request after v0. The hook still handles explicit coach commands (`coach <mode>`, `coach reminder`, `coach audit`) while the reminder is off; only the line on ordinary prompts goes.
 
 - **The setting:** `coach reminder off|on`, saved in `~/.agent-coach/state/reminder`. Some users' instructions forbid hooks that add context to every prompt, and this lets them follow that rule.
 - **When off:**
@@ -219,7 +219,7 @@ This ships as its own pull request, before v0.
 
 ## Rollout
 
-- **Optional per-prompt reminder:** its own pull request, not built yet. v0 doesn't depend on it, so v0 shipped first.
+- **Optional per-prompt reminder:** built on `feat/prompt-reminder`, its own pull request after v0.
 - **v0:** Claude Code only. The collector, rules A1–A5, measurements M1–M6, the skill with memory reads and the summary save, the `/insights` report as an input, the hook pointer, unit tests and the three behavioral evals.
 - **Directory readiness (done early, its own branch):** the icon and declared hosts are on `chore/directory-readiness`.
 - **After v0 ships:** approve the final icon, then submit to Anthropic's plugin directory.
@@ -240,6 +240,6 @@ This ships as its own pull request, before v0.
 | 2 | Save audit summaries to memory | **Decided 2026-11-26: yes, in v0.** Without asking only when the hint allows it |
 | 3 | How memory reaches per-request coaching | Default: through the v1 focus line, not a memory call per session |
 | 4 | Session history | Default: read the latest `/insights` report; no transcript parser in this repo |
-| 5 | Per-prompt reminder | **Decided 2026-11-26: make it optional** (`coach reminder off`), as its own PR (not built yet; v0 doesn't depend on it). In Claude Code the hook stays in the plugin and adds nothing when off; one short process per prompt is the accepted cost |
+| 5 | Per-prompt reminder | **Decided 2026-11-26: make it optional** (`coach reminder off`), as its own PR (built on `feat/prompt-reminder`). In Claude Code the hook stays in the plugin and adds nothing when off; one short process per prompt is the accepted cost |
 | 6 | Paid eval budget for v0 | Default: 3 cases × 3 runs, once before merge |
 | 7 | Anthropic's plugin directory | Default: submit after v0 ships. Icon and hosts are ready; `--strict` keeps one warning (no `version`) on purpose, see Distribution |

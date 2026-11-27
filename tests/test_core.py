@@ -5,6 +5,7 @@ import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,7 +20,8 @@ spec.loader.exec_module(coach_hook)
 class IsolatedState(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.env = {k: os.environ.pop(k, None) for k in ("AGENT_COACH_MODE", "EVAL_AGENT_COACH_MODE")}
+        self.env = {k: os.environ.pop(k, None) for k in
+                    ("AGENT_COACH_MODE", "EVAL_AGENT_COACH_MODE", "AGENT_COACH_REMINDER", "EVAL_AGENT_COACH_REMINDER")}
         os.environ["AGENT_COACH_STATE"] = self.tmp.name
 
     def tearDown(self):
@@ -159,6 +161,53 @@ class OtherToolHookTests(IsolatedState):
         out = coach_hook.handle("cursor", "prompt", {"prompt": "coach off"})
         self.assertEqual(out, {"continue": True})
         self.assertEqual(coachlib.get_mode(), "off")
+
+
+class ReminderTests(IsolatedState):
+    def test_defaults_to_on_and_persists(self):
+        self.assertEqual(coachlib.get_reminder(), "on")
+        coachlib.set_reminder("off")
+        self.assertEqual(coachlib.get_reminder(), "off")
+        self.assertIn("per-prompt reminder off", coachlib.status_line())
+        with self.assertRaises(ValueError):
+            coachlib.set_reminder("maybe")
+
+    def test_command_matching(self):
+        for prompt, want in (("coach reminder off", "off"), ("/coach reminder on", "on"),
+                             ("/agent-coach:coach reminder OFF", "off"), ("coach reminder", None),
+                             ("coach off", None), ("turn the coach reminder off please", None)):
+            self.assertEqual(coachlib.parse_reminder(prompt), want, prompt)
+        self.assertIsNone(coachlib.parse_toggle("coach reminder off"))
+
+    def test_off_drops_the_line_and_keeps_everything_else(self):
+        coachlib.set_reminder("off")
+        self.assertIsNone(coach_hook.handle("claude", "prompt", {"prompt": "fix the login bug"}))
+        self.assertIsNone(coach_hook.handle("codex", "prompt", {"prompt": "fix the login bug"}))
+        self.assertEqual(coach_hook.handle("cursor", "prompt", {"prompt": "fix it"}), {"continue": True})
+        start = coach_hook.handle("claude", "session-start", {})
+        self.assertIn("## force", start["hookSpecificOutput"]["additionalContext"])
+        audit = coach_hook.handle("claude", "prompt", {"prompt": "coach audit"})
+        self.assertIn("coach-audit", audit["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(coach_hook.handle("claude", "prompt", {"prompt": "coach suggest"})["decision"], "block")
+        self.assertEqual(coachlib.get_mode(), "suggest")
+
+    def test_typed_command_switches_without_the_model(self):
+        with mock.patch.object(coach_hook, "apply_reminder_elsewhere") as elsewhere:
+            out = coach_hook.handle("claude", "prompt", {"prompt": "coach reminder off"})
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("reminder is now off", out["reason"])
+        self.assertEqual(coachlib.get_reminder(), "off")
+        elsewhere.assert_called_once()
+        with mock.patch.object(coach_hook, "apply_reminder_elsewhere"):
+            out = coach_hook.handle("cursor", "prompt", {"prompt": "coach reminder on"})
+        self.assertEqual(out, {"continue": True})
+        self.assertEqual(coachlib.get_reminder(), "on")
+
+    def test_off_costs_no_tokens_per_prompt(self):
+        coachlib.set_reminder("off")
+        cost = coachlib.context_cost()
+        self.assertEqual(cost["every prompt, force (hook tools)"], 0)
+        self.assertEqual(cost["every prompt, suggest (hook tools)"], 0)
 
 
 if __name__ == "__main__":
