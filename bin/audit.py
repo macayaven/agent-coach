@@ -10,6 +10,7 @@ by event and source only, settings by key name.
 
 import argparse
 import datetime
+import fnmatch
 import hashlib
 import json
 import os
@@ -204,6 +205,31 @@ def instruction_candidates(reader, home, overridden, cwd, managed):
     # AGENTS.md loads only when no CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md
     # exists in the working folder or above it (~/.claude/CLAUDE.md doesn't count).
     return found + (claude or agents)
+
+
+def exclude_patterns(settings):
+    """`claudeMdExcludes` from every settings layer; the arrays merge across layers."""
+    patterns = []
+    for _scope, _shown, data in settings:
+        value = data.get("claudeMdExcludes")
+        if isinstance(value, list):
+            patterns += [p for p in value if isinstance(p, str) and p.strip()]
+    return patterns
+
+
+def is_excluded(path, patterns):
+    """Glob against the absolute path or the link target. A managed CLAUDE.md can't be excluded."""
+    names = {str(path.absolute()), str(path.resolve())}
+    return any(fnmatch.fnmatchcase(name, pattern) for name in names for pattern in patterns)
+
+
+def drop_excluded(candidates, patterns):
+    # The docs don't say whether an excluded CLAUDE.md still stops AGENTS.md from
+    # loading; this keeps the load-or-not decision above and only removes files.
+    kept, dropped = [], []
+    for scope, path in candidates:
+        (dropped if scope != "managed" and is_excluded(path, patterns) else kept).append((scope, path))
+    return kept, dropped
 
 
 def imports_of(path, text, home):
@@ -498,8 +524,10 @@ def audit(repo=None, home=None, overridden=None, managed="default"):
     if managed is None:
         unchecked.append("managed (organization) settings and instructions")
 
-    files = collect_instructions(reader, instruction_candidates(reader, home, overridden, cwd, managed), home)
     settings = settings_files(reader, home, cwd, managed)
+    candidates, excluded = drop_excluded(instruction_candidates(reader, home, overridden, cwd, managed),
+                                         exclude_patterns(settings))
+    files = collect_instructions(reader, candidates, home)
     plugins = plugin_dirs(reader, home, settings)
 
     root = project_root(cwd, home, overridden)
@@ -562,7 +590,8 @@ def audit(repo=None, home=None, overridden=None, managed="default"):
     total_tokens = sum(f["tokens"] for f in files)
     measurements = [
         measurement("M1", total_tokens, f"about {total_tokens} tokens of instruction files load every session",
-                    [f"{f['path']} ({f['scope']}): {f['lines']} lines, about {f['tokens']} tokens" for f in files]),
+                    [f"{f['path']} ({f['scope']}): {f['lines']} lines, about {f['tokens']} tokens" for f in files]
+                    + [f"{reader.show(path)}: skipped by claudeMdExcludes" for _scope, path in excluded]),
         measurement("M2", sum(r["count"] for r in context_hooks),
                     f"{sum(r['count'] for r in context_hooks)} hooks can add context at session start or on every prompt",
                     [f"{r['event']}: {r['source']} ({r['count']})" for r in context_hooks]),

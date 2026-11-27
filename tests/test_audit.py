@@ -68,6 +68,27 @@ class InstructionFileTests(Fixture):
         self.write("CLAUDE.md", "project rules\n", base=self.repo)
         self.assertEqual(self.loaded(self.run_audit()), ["~/.claude/CLAUDE.md", "~/work/app/CLAUDE.md"])
 
+    def test_claude_md_excludes_drops_a_file_and_its_a1(self):
+        canon = self.write("vault/canon.md", "rules\n")
+        (self.home / ".claude").mkdir(parents=True, exist_ok=True)
+        (self.home / ".claude" / "CLAUDE.md").symlink_to(canon)
+        (self.home / "AGENTS.md").symlink_to(canon)
+        self.assertIn("A1", self.ids(self.run_audit()))
+        self.write(".claude/settings.json", json.dumps({"claudeMdExcludes": [str(self.home / "AGENTS.md")]}))
+        result = self.run_audit()
+        self.assertEqual(self.loaded(result), ["~/.claude/CLAUDE.md"])
+        self.assertNotIn("A1", self.ids(result))
+        m1 = next(m for m in result["measurements"] if m["id"] == "M1")
+        self.assertIn("~/AGENTS.md: skipped by claudeMdExcludes", m1["detail"])
+
+    def test_claude_md_excludes_globs_merge_across_layers(self):
+        self.write(".claude/CLAUDE.md", "user rules\n")
+        self.write("CLAUDE.md", "project rules\n", base=self.repo)
+        self.write("CLAUDE.local.md", "my notes\n", base=self.repo)
+        self.write(".claude/settings.json", json.dumps({"claudeMdExcludes": ["**/app/CLAUDE.md"]}))
+        self.write(".claude/settings.local.json", json.dumps({"claudeMdExcludes": ["**/CLAUDE.local.md"]}), base=self.repo)
+        self.assertEqual(self.loaded(self.run_audit()), ["~/.claude/CLAUDE.md"])
+
     @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), "needs POSIX permissions as non-root")
     def test_unreadable_config_is_reported_not_hidden(self):
         self.write(".claude/CLAUDE.md", "rules\n")

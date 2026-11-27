@@ -4,6 +4,7 @@ Status: v0 in PR #7 (2026-11-27): unit tests and the three behavioral evals pass
 
 **Changed while building v0:**
 - A1 also fires for two different files with identical content, not only one file reached by two paths.
+- The audit honors `claudeMdExcludes` from every settings layer (globs against the absolute path or the link target; a managed CLAUDE.md can't be excluded), and lists skipped files under M1. That is the fix for an A1 where `~/AGENTS.md` repeats `~/.claude/CLAUDE.md`: Claude Code loads the home `AGENTS.md` in any repo without a CLAUDE.md, and excluding it keeps the link for other agents that read it.
 - A3 drops `MUST`: `retired.md` names IMPORTANT, ALWAYS and NEVER only. It maps to `11-skills-hooks`, whose "When" names ALWAYS/NEVER rules, so `why` has a technique file to open.
 - The audit's own home and repo can be overridden with `EVAL_AGENT_COACH_HOME` and `EVAL_AGENT_COACH_REPO` (or `AGENT_COACH_AUDIT_HOME` and `AGENT_COACH_AUDIT_REPO`). With an overridden home it never reads folders above it, nor managed settings.
 - Runs are saved per repository, in `~/.agent-coach/state/audits/<repo>-<hash>/<timestamp>.json`, so two repos audited on the same day don't overwrite each other. `--no-save` skips it.
