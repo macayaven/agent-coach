@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import re
+import stat as stat_module
 import sys
 from pathlib import Path
 
@@ -112,13 +113,43 @@ class Reader:
                 return "~" + text[len(home):]
         return text
 
-    def text(self, path):
+    def denied(self, path, error):
+        """Record a path that exists or may exist but can't be read, such as one a sandbox blocks."""
+        note = f"{self.show(path)}: couldn't read it ({error.strerror or error}); a sandbox may be blocking it"
+        if note not in self.problems:
+            self.problems.append(note)
+
+    def stat(self, path):
+        """os.stat, or None when the path is absent. Other errors are recorded, not hidden."""
         try:
-            if path.stat().st_size > MAX_FILE_BYTES:
-                self.problems.append(f"{self.show(path)}: over 1 MB, not read")
-                return None
+            return path.stat()
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except OSError as error:
+            self.denied(path, error)
+            return None
+
+    def is_file(self, path):
+        st = self.stat(path)
+        return bool(st) and stat_module.S_ISREG(st.st_mode)
+
+    def is_dir(self, path):
+        st = self.stat(path)
+        return bool(st) and stat_module.S_ISDIR(st.st_mode)
+
+    def text(self, path):
+        st = self.stat(path)
+        if st is None:
+            return None
+        if st.st_size > MAX_FILE_BYTES:
+            self.problems.append(f"{self.show(path)}: over 1 MB, not read")
+            return None
+        try:
             return path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
+            return None
+        except OSError as error:
+            self.denied(path, error)
             return None
 
     def json(self, path):
@@ -150,12 +181,12 @@ def strip_code(text):
     return out
 
 
-def instruction_candidates(home, overridden, cwd, managed):
+def instruction_candidates(reader, home, overridden, cwd, managed):
     """(scope, path) for each instruction file Claude Code loads at launch, in load order."""
     found = []
-    if managed and (managed / "CLAUDE.md").is_file():
+    if managed and reader.is_file(managed / "CLAUDE.md"):
         found.append(("managed", managed / "CLAUDE.md"))
-    if (home / ".claude" / "CLAUDE.md").is_file():
+    if reader.is_file(home / ".claude" / "CLAUDE.md"):
         found.append(("user", home / ".claude" / "CLAUDE.md"))
     dirs = [cwd] + list(cwd.parents)
     if overridden:  # a fixture home: never read the real folders above it
@@ -166,9 +197,9 @@ def instruction_candidates(home, overridden, cwd, managed):
         for name in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
             if name == ".claude/CLAUDE.md" and d == home:
                 continue  # that's the user file, already listed
-            if (d / name).is_file():
+            if reader.is_file(d / name):
                 claude.append((scope, d / name))
-        if (d / "AGENTS.md").is_file():
+        if reader.is_file(d / "AGENTS.md"):
             agents.append((scope, d / "AGENTS.md"))
     # AGENTS.md loads only when no CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md
     # exists in the working folder or above it (~/.claude/CLAUDE.md doesn't count).
@@ -227,7 +258,7 @@ def settings_files(reader, home, cwd, managed):
         if str(path.resolve()) in seen:
             continue  # the working folder is the home: its settings are the user's
         seen.add(str(path.resolve()))
-        data = reader.json(path) if path.is_file() else None
+        data = reader.json(path) if reader.is_file(path) else None
         if isinstance(data, dict):
             out.append((scope, reader.show(path), data))
     return out
@@ -467,7 +498,7 @@ def audit(repo=None, home=None, overridden=None, managed="default"):
     if managed is None:
         unchecked.append("managed (organization) settings and instructions")
 
-    files = collect_instructions(reader, instruction_candidates(home, overridden, cwd, managed), home)
+    files = collect_instructions(reader, instruction_candidates(reader, home, overridden, cwd, managed), home)
     settings = settings_files(reader, home, cwd, managed)
     plugins = plugin_dirs(reader, home, settings)
 
@@ -548,9 +579,9 @@ def audit(repo=None, home=None, overridden=None, managed="default"):
     ]
 
     insights = home / ".claude" / "usage-data" / "report.html"
-    insights_info = {"path": reader.show(insights), "file": str(insights.absolute()), "exists": insights.is_file(),
+    insights_info = {"path": reader.show(insights), "file": str(insights.absolute()), "exists": reader.is_file(insights),
                      "age_days": None, "fresh": False}
-    if insights.is_file():
+    if insights_info["exists"]:
         age = (datetime.datetime.now() - datetime.datetime.fromtimestamp(insights.stat().st_mtime)).days
         insights_info.update(age_days=age, fresh=age <= INSIGHTS_MAX_AGE_DAYS)
 
@@ -692,13 +723,45 @@ def text_report(result):
     return "\n".join(out)
 
 
+def replay_path():
+    """A recorded audit to print instead of collecting one, for behavioral evals.
+
+    `claude plugin eval` runs the agent's shell in a sandbox that can't read the
+    plugin's evals/ folder or any .claude/ folder, fixture or not, so a live
+    collector can't see a planted user settings.json or /insights report. The
+    evals replay what the collector produced from tests/fixtures/audit-home outside
+    the sandbox; tests/test_audit.py keeps the two in step.
+    """
+    raw = os.environ.get("AGENT_COACH_AUDIT_REPLAY") or os.environ.get("EVAL_AGENT_COACH_REPLAY")
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else coachlib.REPO / path
+
+
+def replay(path):
+    """Load a recorded audit, resolving its relative file paths against the checkout."""
+    result = json.loads(path.read_text(encoding="utf-8"))
+
+    def resolve(value):
+        return value if not value or Path(value).is_absolute() else str(coachlib.REPO / value)
+
+    result["home"] = resolve(result.get("home"))
+    result["insights"]["file"] = resolve(result["insights"].get("file"))
+    for f in result.get("instruction_files", []):
+        f["file"] = resolve(f.get("file"))
+    result["replayed"] = True
+    return result
+
+
 def main(args):
     parser = argparse.ArgumentParser(prog="coach audit", description="Audit the setup your coding agent works in.")
     parser.add_argument("--json", action="store_true", help="print JSON for the coach-audit skill")
     parser.add_argument("--repo", help="the folder you start the agent in (default: the current folder)")
     parser.add_argument("--no-save", action="store_true", help="don't keep this run in ~/.agent-coach/state/audits")
     opts = parser.parse_args(args)
-    result = audit(repo=opts.repo)
+    recorded = replay_path()
+    result = replay(recorded) if recorded else audit(repo=opts.repo)
     if not opts.no_save:
         save(result)
     print(json.dumps(result, separators=(",", ":")) if opts.json else text_report(result))

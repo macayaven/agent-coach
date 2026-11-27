@@ -166,7 +166,7 @@ claude plugin eval . --runs 3 --ablation none --case 'audit-*' --allow-tools Bas
 
 CI runs the first three on every pull request.
 
-The eval suite in `evals/` checks that force mode asks for a redo without loading technique files, suggest mode does the task and adds a note, plain questions are answered directly, and off stays quiet. The `audit-*` cases run `coach audit` on a fake home in `evals/fixtures/` and check that the report ranks at most three gaps with evidence, works without a memory tool, and ignores an instruction planted in the `/insights` report.
+The eval suite in `evals/` checks that force mode asks for a redo without loading technique files, suggest mode does the task and adds a note, plain questions are answered directly, and off stays quiet. The `audit-*` cases replay a recorded audit of a fake home in `tests/fixtures/` and check that the report ranks at most three gaps with evidence, works without a memory tool, and ignores an instruction planted in the `/insights` report. They replay instead of collecting because the eval sandbox can't read `.claude/` folders; the unit tests cover the collector.
 
 ## How it works
 
@@ -186,6 +186,7 @@ Installing Agent Coach lets this repository put instructions into your agents an
 - Coaching is an instruction to the model, reinforced by hooks where the tool has them. It isn't a hard lock: the model can occasionally skip it, and you can always say `coach skip`.
 - Cursor, VS Code Copilot and Antigravity can't add context to each prompt, so the rules arrive once per session. In a very long session the coaching can fade; start a new chat.
 - If both Codex and VS Code Copilot are installed, Copilot may list the skills twice, because it can read `~/.agents/skills` as well as `~/.copilot/skills`.
+- `coach audit` reads Claude Code's config files. A sandboxed shell may not be allowed to: the `claude plugin eval` sandbox blocks every `.claude/` folder, `~/.claude` included, and Claude Code's own sandbox may too. The audit then lists the files it couldn't read instead of treating them as missing. Run it in your own terminal for a full result.
 - Developed and tested on Linux. macOS should behave the same. Windows is untested; there, skills are copied instead of symlinked and `coach` isn't put on PATH.
 
 ## Layout

@@ -38,7 +38,7 @@ claude plugin eval . --runs 3 --ablation none   # behavior; makes real model cal
 claude plugin eval . --runs 3 --ablation none --case 'audit-*' --allow-tools Bash   # audit behavior
 ```
 
-Run the evals when you change `SKILL.md`, the reminders in `bin/coachlib.py`, or `index.md`. A wording change that looks harmless can stop the coach from coaching. Run the `audit-*` cases when you change `skills/coach-audit/SKILL.md` or the audit's JSON.
+Run the evals when you change `SKILL.md`, the reminders in `bin/coachlib.py`, or `index.md`. A wording change that looks harmless can stop the coach from coaching. Run the `audit-*` cases when you change `skills/coach-audit/SKILL.md` or the audit's JSON. They replay `tests/fixtures/audit-replay.json`; after changing the collector or its fixture, rebuild it with `python3 tests/fixtures/make_replay.py` (a unit test fails until you do).
 
 If a refresh retires or renames a technique that an audit rule points to, `tests/test_audit.py` fails. Remap or retire the rule in `bin/audit.py`; the refresh agent can't edit code, so this keeps a person in the loop.
 

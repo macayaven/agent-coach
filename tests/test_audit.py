@@ -68,6 +68,19 @@ class InstructionFileTests(Fixture):
         self.write("CLAUDE.md", "project rules\n", base=self.repo)
         self.assertEqual(self.loaded(self.run_audit()), ["~/.claude/CLAUDE.md", "~/work/app/CLAUDE.md"])
 
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), "needs POSIX permissions as non-root")
+    def test_unreadable_config_is_reported_not_hidden(self):
+        self.write(".claude/CLAUDE.md", "rules\n")
+        self.write(".claude/settings.json", "{}")
+        locked = self.home / ".claude"
+        locked.chmod(0)
+        try:
+            result = self.run_audit()
+        finally:
+            locked.chmod(0o755)
+        self.assertEqual(self.loaded(result), [])
+        self.assertTrue(any("~/.claude/CLAUDE.md: couldn't read it" in u for u in result["unchecked"]), result["unchecked"])
+
     def test_never_reads_above_a_fixture_home(self):
         self.write("AGENTS.md", "outside the home\n", base=self.home.parent)
         self.assertEqual(self.loaded(self.run_audit()), [])
@@ -319,11 +332,40 @@ class HistoryAndHintTests(Fixture):
         self.assertFalse((self.state / "audits").exists())
 
     def test_relative_eval_home_resolves_against_the_checkout(self):
-        os.environ["EVAL_AGENT_COACH_HOME"] = "evals/fixtures/audit-home"
+        os.environ["EVAL_AGENT_COACH_HOME"] = "tests/fixtures/audit-home"
         try:
-            self.assertEqual(audit.audit_home(), (ROOT / "evals" / "fixtures" / "audit-home", True))
+            self.assertEqual(audit.audit_home(), (ROOT / "tests" / "fixtures" / "audit-home", True))
         finally:
             del os.environ["EVAL_AGENT_COACH_HOME"]
+
+
+class ReplayTests(unittest.TestCase):
+    """The behavioral evals replay a recorded audit, because the eval sandbox can't read
+    .claude/ folders or the plugin's evals/ folder. The recording must match what the collector finds."""
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("make_replay", ROOT / "tests" / "fixtures" / "make_replay.py")
+        self.make_replay = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.make_replay)
+
+    def test_recording_matches_the_collector(self):
+        recorded = json.loads((ROOT / "tests" / "fixtures" / "audit-replay.json").read_text(encoding="utf-8"))
+        fresh = self.make_replay.build()
+        for key in ("findings", "measurements", "instruction_files", "hooks", "repo_facts", "unchecked", "insights"):
+            self.assertEqual(recorded[key], fresh[key], f"{key}: run python3 tests/fixtures/make_replay.py")
+        self.assertEqual([f["id"] for f in recorded["findings"]], ["A1", "A4", "A5"])
+
+    def test_replay_resolves_paths_against_the_checkout(self):
+        with tempfile.TemporaryDirectory() as state:
+            env = dict(os.environ, EVAL_AGENT_COACH_REPLAY="tests/fixtures/audit-replay.json", AGENT_COACH_STATE=state)
+            run = subprocess.run([sys.executable, str(ROOT / "bin" / "coach"), "audit", "--json"],
+                                 capture_output=True, text=True, env=env)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        result = json.loads(run.stdout)
+        self.assertTrue(result["replayed"])
+        self.assertTrue(Path(result["insights"]["file"]).is_file())
+        self.assertTrue(all(Path(f["file"]).is_file() for f in result["instruction_files"]))
+        self.assertEqual({f["status"] for f in result["findings"]}, {"new"})
 
 
 class CatalogueTests(unittest.TestCase):
