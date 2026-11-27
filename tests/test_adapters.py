@@ -20,7 +20,7 @@ class FakeHome(unittest.TestCase):
         for patcher in (mock.patch.object(adapters, "HOME", self.home), mock.patch.dict(os.environ, env)):
             patcher.start()
             self.addCleanup(patcher.stop)
-        for key in ("AGENT_COACH_MODE", "EVAL_AGENT_COACH_MODE"):
+        for key in ("AGENT_COACH_MODE", "EVAL_AGENT_COACH_MODE", "AGENT_COACH_REMINDER", "EVAL_AGENT_COACH_REMINDER"):
             os.environ.pop(key, None)
         self.addCleanup(self.tmp.cleanup)
 
@@ -180,6 +180,42 @@ class InstallTests(FakeHome):
         commands = [h["command"] for h in json.loads(self.read(".cursor/hooks.json"))["hooks"]["sessionStart"]]
         self.assertEqual(len(commands), 1)
         self.assertIn("coach-hook", commands[0])
+
+    def test_reminder_off_removes_only_our_per_prompt_hooks(self):
+        (self.home / ".codex").mkdir()
+        (self.home / ".codex" / "hooks.json").write_text(json.dumps(
+            {"hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "mine.sh"}]}]}}))
+        (self.home / ".gemini").mkdir()
+        (self.home / ".gemini" / "settings.json").write_text("{}")
+        adapters.install(["codex", "gemini", "cursor"])
+
+        coachlib.set_reminder("off")
+        lines = adapters.apply_reminder()
+        self.assertIn("✓ codex: per-prompt hook removed", lines)
+        self.assertTrue(any("/hooks" in line for line in lines))
+        codex = self.hooks(".codex/hooks.json")
+        self.assertEqual(len(codex["SessionStart"]), 1)
+        self.assertEqual([g["hooks"][0]["command"] for g in codex["UserPromptSubmit"]], ["mine.sh"])
+        gemini = self.hooks(".gemini/settings.json")
+        self.assertIn("SessionStart", gemini)
+        self.assertNotIn("BeforeAgent", gemini)
+        cursor = self.hooks(".cursor/hooks.json")
+        self.assertIn("sessionStart", cursor)
+        self.assertNotIn("beforeSubmitPrompt", cursor)
+
+        adapters.update()  # an update keeps the setting
+        self.assertNotIn("BeforeAgent", self.hooks(".gemini/settings.json"))
+
+        coachlib.set_reminder("on")
+        adapters.apply_reminder()
+        self.assertEqual(len(self.hooks(".codex/hooks.json")["UserPromptSubmit"]), 2)
+        self.assertIn("gemini prompt", self.hooks(".gemini/settings.json")["BeforeAgent"][0]["hooks"][0]["command"])
+        self.assertEqual(len(self.hooks(".cursor/hooks.json")["beforeSubmitPrompt"]), 1)
+
+    def test_reminder_leaves_tools_that_are_not_installed_alone(self):
+        coachlib.set_reminder("off")
+        self.assertEqual(adapters.apply_reminder(), ["agent-coach per-prompt reminder: off"])
+        self.assertFalse((self.home / ".codex" / "hooks.json").exists())
 
     def test_will_not_overwrite_someone_elses_skill(self):
         other = self.home / ".copilot" / "skills" / "coach"

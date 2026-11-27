@@ -135,6 +135,11 @@ def edit_json(path: Path, change):
     write_text(path, json.dumps(data, indent=2) + "\n")
 
 
+def wants_hook(on: bool, arg: str) -> bool:
+    """Whether a tool should have our hook for this event; `coach reminder off` drops the per-prompt one."""
+    return on and (arg != "prompt" or coachlib.get_reminder() == "on")
+
+
 def set_hook(hooks: dict, event: str, group):
     """Replace our handler for `event` in Claude-style {event: [group, ...]} hooks."""
     groups = [g for g in hooks.get(event, []) if not is_ours(g)]
@@ -238,7 +243,7 @@ class Codex:
             for event, arg in self.EVENTS:
                 group = {"hooks": [{"type": "command", "command": hook_command("codex", arg),
                                     "statusMessage": "agent-coach"}]}
-                set_hook(d.setdefault("hooks", {}), event, group if on else None)
+                set_hook(d.setdefault("hooks", {}), event, group if wants_hook(on, arg) else None)
 
         path = codex_home() / "hooks.json"
         if on or path.exists():
@@ -253,6 +258,9 @@ class Codex:
     def uninstall(self):
         self.remove_old_block()
         self.set_hooks(False)
+
+    def apply_reminder(self):
+        self.set_hooks(True)
 
     def render(self):
         pass  # the hooks read the mode
@@ -275,7 +283,7 @@ class Gemini:
             for event, arg in self.EVENTS:
                 group = {"hooks": [{"type": "command", "name": "agent-coach",
                                     "command": hook_command("gemini", arg), "timeout": 10000}]}
-                set_hook(d.setdefault("hooks", {}), event, group if on else None)
+                set_hook(d.setdefault("hooks", {}), event, group if wants_hook(on, arg) else None)
 
         path = HOME / ".gemini" / "settings.json"
         if on or path.exists():
@@ -293,6 +301,9 @@ class Gemini:
         remove_block(HOME / ".gemini" / "GEMINI.md")
         self.set_hooks(False)
         (HOME / ".gemini" / "commands" / "coach.toml").unlink(missing_ok=True)
+
+    def apply_reminder(self):
+        self.set_hooks(True)
 
     def render(self):
         pass  # the hooks read the mode
@@ -339,15 +350,26 @@ class Cursor:
     def detect(self):
         return (HOME / ".cursor").exists() or shutil.which("cursor") is not None
 
-    def install(self):
+    def set_hooks(self):
         def change(d):
             d.setdefault("version", 1)
             hooks = d.setdefault("hooks", {})
             for event, arg in (("sessionStart", "session-start"), ("beforeSubmitPrompt", "prompt")):
-                hooks[event] = [h for h in hooks.get(event, []) if not is_ours(h)]
-                hooks[event].append({"command": hook_command("cursor", arg)})
+                kept = [h for h in hooks.get(event, []) if not is_ours(h)]
+                if wants_hook(True, arg):
+                    kept.append({"command": hook_command("cursor", arg)})
+                if kept:
+                    hooks[event] = kept
+                else:
+                    hooks.pop(event, None)
 
         edit_json(HOME / ".cursor" / "hooks.json", change)
+
+    def apply_reminder(self):
+        self.set_hooks()
+
+    def install(self):
+        self.set_hooks()
         install_skills(HOME / ".agents" / "skills")
         return ["If coaching doesn't show up in Cursor, paste `coach render` into Customize > Rules > User Rules."]
 
@@ -481,6 +503,32 @@ def uninstall(names=None):
     if not done and os.name != "nt":
         launcher_path().unlink(missing_ok=True)
     save_installed(done)
+    return lines
+
+
+# Tools whose per-prompt hook entry the installer writes, so `coach reminder` adds or removes it.
+# Claude Code's hooks come with the plugin and can't be turned off one at a time: there the
+# hook keeps running and adds nothing while the reminder is off.
+PROMPT_HOOK_TOOLS = ("codex", "gemini", "cursor")
+
+
+def apply_reminder():
+    """Match every installed tool's per-prompt hook to the saved reminder setting."""
+    value = coachlib.get_reminder()
+    done = load_installed()["tools"]
+    lines = [f"agent-coach per-prompt reminder: {value}"]
+    for name in done:
+        if name not in PROMPT_HOOK_TOOLS:
+            continue
+        try:
+            ADAPTERS[name].apply_reminder()
+            lines.append(f"✓ {name}: per-prompt hook {'added' if value == 'on' else 'removed'}")
+        except (RuntimeError, OSError) as e:
+            lines.append(f"✗ {name}: {e}")
+    if "codex" in done:
+        lines.append("    In Codex, run /hooks and trust the agent-coach hooks again (Codex asks whenever they change).")
+    if value == "off" and "claude" in done:
+        lines.append("✓ claude: the plugin's prompt hook still runs, but adds nothing")
     return lines
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """agent-coach hook: inject the coaching rules at session start and a mode reminder on
-every prompt, handle `coach force|suggest|off|status` without a model call, and point
-`coach audit` at the coach-audit skill.
+every prompt (unless `coach reminder off`), handle `coach force|suggest|off|status` and
+`coach reminder on|off` without a model call, and point `coach audit` at the coach-audit skill.
 
 Usage: coach_hook.py <tool> <event>   (reads the hook's JSON input on stdin)
   tool:  claude | codex | gemini | cursor
@@ -62,6 +62,22 @@ def refresh_static_files():
         pass
 
 
+def apply_reminder_elsewhere():
+    """Add or remove the per-prompt hook entries of other tools, from the checkout that installed them."""
+    installed = adapters.load_installed()
+    if not set(installed.get("tools", [])) & set(adapters.PROMPT_HOOK_TOOLS):
+        return
+    repo = Path(installed.get("repo", ""))
+    try:
+        if repo == coachlib.REPO:
+            adapters.apply_reminder()
+        elif (repo / "bin" / "coach").exists():
+            subprocess.run([sys.executable, str(repo / "bin" / "coach"), "reminder", coachlib.get_reminder()],
+                           timeout=10, capture_output=True)
+    except Exception:  # never let bookkeeping break the user's prompt
+        pass
+
+
 def handle(tool, event, payload):
     """Return the JSON to print, or None to add nothing."""
     fmt = FORMATTERS[tool]
@@ -70,6 +86,13 @@ def handle(tool, event, payload):
         if coachlib.is_audit_request(payload.get("prompt", "")):
             # In any mode, on this prompt only. Cursor can't add context to a prompt.
             return fmt(event) if tool in PASS_SWITCH_THROUGH else fmt(event, context=coachlib.audit_pointer())
+        reminder = coachlib.parse_reminder(payload.get("prompt", ""))
+        if reminder:
+            coachlib.set_reminder(reminder)
+            apply_reminder_elsewhere()
+            if tool in PASS_SWITCH_THROUGH:
+                return fmt(event)
+            return fmt(event, block_reason=f"agent-coach: per-prompt reminder is now {reminder} (all tools).")
         command = coachlib.parse_toggle(payload.get("prompt", ""))
         if command == "status":
             return fmt(event, block_reason=coachlib.status_line())
@@ -79,7 +102,7 @@ def handle(tool, event, payload):
             if tool in PASS_SWITCH_THROUGH:
                 return fmt(event)
             return fmt(event, block_reason=f"agent-coach: mode is now {command} (all tools).")
-        if mode == "off":
+        if mode == "off" or coachlib.get_reminder() == "off":
             return fmt(event) if tool in PASS_SWITCH_THROUGH else None
         return fmt(event, context=coachlib.REMINDERS[mode])
     return fmt(event, context=coachlib.render(mode)) if mode != "off" else None

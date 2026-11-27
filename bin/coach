@@ -3,6 +3,7 @@
 
   coach                       show mode and how fresh the techniques are
   coach force|suggest|off     switch mode everywhere (also: coach on = force)
+  coach reminder [on|off]     add the one-line mode reminder to every prompt, or don't
   coach install [TOOL ...]    install adapters (default: every tool detected)
   coach uninstall [TOOL ...]  remove adapters
   coach update                pull the latest techniques and refresh every tool
@@ -31,6 +32,17 @@ def main(argv):
         mode = coachlib.set_mode(args[0] if cmd == "mode" else cmd)
         adapters.refresh()
         print(f"agent-coach mode: {mode} (applies to new sessions; hook-based tools switch on the next prompt)")
+    elif cmd == "reminder":
+        if not args:
+            print(f"agent-coach per-prompt reminder: {coachlib.get_reminder()}")
+            return 0
+        try:
+            coachlib.set_reminder(args[0].lower())
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 2
+        for line in adapters.apply_reminder():
+            print(line)
     elif cmd == "install":
         for line in adapters.install(args or None):
             print(line)
