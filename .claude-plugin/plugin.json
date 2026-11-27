@@ -11,5 +11,10 @@
   ],
   "author": {
     "name": "macayaven"
+  },
+  "network": {
+    "hosts": [
+      "github.com"
+    ]
   }
 }
