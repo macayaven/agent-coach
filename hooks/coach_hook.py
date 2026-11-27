@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """agent-coach hook: inject the coaching rules at session start and a mode reminder on
-every prompt, and handle `coach force|suggest|off|status` without a model call.
+every prompt, handle `coach force|suggest|off|status` without a model call, and point
+`coach audit` at the coach-audit skill.
 
 Usage: coach_hook.py <tool> <event>   (reads the hook's JSON input on stdin)
   tool:  claude | codex | gemini | cursor
@@ -66,6 +67,9 @@ def handle(tool, event, payload):
     fmt = FORMATTERS[tool]
     mode = coachlib.get_mode()
     if event == "prompt":
+        if coachlib.is_audit_request(payload.get("prompt", "")):
+            # In any mode, on this prompt only. Cursor can't add context to a prompt.
+            return fmt(event) if tool in PASS_SWITCH_THROUGH else fmt(event, context=coachlib.audit_pointer())
         command = coachlib.parse_toggle(payload.get("prompt", ""))
         if command == "status":
             return fmt(event, block_reason=coachlib.status_line())

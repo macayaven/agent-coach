@@ -20,6 +20,20 @@ TOGGLE_RE = re.compile(
     r"^\s*/?(?:agent-coach:)?coach\s+(force|suggest|off|on|status)\s*$", re.IGNORECASE
 )
 
+# "coach audit", "/coach audit", "/agent-coach:coach audit --repo x": the hook points
+# the agent at the coach-audit skill, in any mode.
+AUDIT_RE = re.compile(r"^\s*/?(?:agent-coach:)?coach\s+audit(?:\s.*)?$", re.IGNORECASE | re.DOTALL)
+AUDIT_SKILL = REPO / "skills" / "coach-audit" / "SKILL.md"
+
+
+def is_audit_request(prompt: str) -> bool:
+    return bool(AUDIT_RE.match(prompt or ""))
+
+
+def audit_pointer() -> str:
+    return f"[agent-coach] `coach audit` is a coach command, exempt from coaching: follow `{AUDIT_SKILL}`."
+
+
 # Added to every prompt by hooks, so keep these to one short line: the rules
 # themselves are already in context from session start.
 REMINDERS = {

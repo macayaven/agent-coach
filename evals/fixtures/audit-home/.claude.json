@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "notes": {"type": "stdio", "command": "notes-server"},
+    "tickets": {"type": "http", "url": "https://tickets.example.invalid/mcp"},
+    "search": {"type": "http", "url": "https://search.example.invalid/mcp"}
+  }
+}

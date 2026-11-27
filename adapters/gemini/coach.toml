@@ -1,6 +1,7 @@
-description = "agent-coach: switch mode (force | suggest | off | status)"
+description = "agent-coach: switch mode (force | suggest | off | status) or audit your setup (audit)"
 prompt = """
-I typed `/coach {{args}}`. The agent-coach hook normally handles this before it reaches you.
+I typed `/coach {{args}}`. The agent-coach hook normally handles mode commands before they reach you.
 If the argument is force, suggest or off: follow that agent-coach mode for the rest of this session, run `coach {{args}}` in the shell if it's available so the change persists, and confirm in one line.
+If it starts with `audit`: follow the `coach-audit` skill, which starts with running `coach {{args}} --json` in the shell.
 If it's empty or `status`: tell me the current agent-coach mode in one line.
 """

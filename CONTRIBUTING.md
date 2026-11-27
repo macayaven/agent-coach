@@ -11,6 +11,8 @@ Changes reach `main` through pull requests; direct pushes are blocked. Merge onl
 | A technique's rationale and sources | `skills/agent-coach/references/techniques/<NN>-<name>.md` |
 | What a tool's installer does | `bin/adapters.py` |
 | What the hooks send | `hooks/coach_hook.py` and `bin/coachlib.py` |
+| What `coach audit` reads and the rules it checks | `bin/audit.py` (rules need a sourced threshold; see `docs/specs/coach-audit.md`) |
+| How the audit report is ranked and written | `skills/coach-audit/SKILL.md` |
 
 `SKILL.md` is the single source of the rules. The always-on text each tool receives is built from it, so don't copy rules anywhere else.
 
@@ -33,9 +35,12 @@ bash tests/test_accept_refresh.sh         # the refresh acceptance script
 bash tests/test_run_refresh_agent.sh      # the refresh agent's sign-in handling
 claude plugin validate .                  # plugin manifests
 claude plugin eval . --runs 3 --ablation none   # behavior; makes real model calls
+claude plugin eval . --runs 3 --ablation none --case 'audit-*' --allow-tools Bash   # audit behavior
 ```
 
-Run the evals when you change `SKILL.md`, the reminders in `bin/coachlib.py`, or `index.md`. A wording change that looks harmless can stop the coach from coaching.
+Run the evals when you change `SKILL.md`, the reminders in `bin/coachlib.py`, or `index.md`. A wording change that looks harmless can stop the coach from coaching. Run the `audit-*` cases when you change `skills/coach-audit/SKILL.md` or the audit's JSON.
+
+If a refresh retires or renames a technique that an audit rule points to, `tests/test_audit.py` fails. Remap or retire the rule in `bin/audit.py`; the refresh agent can't edit code, so this keeps a person in the loop.
 
 To try an installer change without touching your real setup, point `HOME` at an empty folder:
 
