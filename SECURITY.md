@@ -6,6 +6,7 @@ Installing Agent Coach gives this repository real reach into your tools:
 
 - Its rules are loaded into your coding agents as instructions.
 - Its hook, a Python script, runs on your machine on every prompt in Claude Code, Codex and Gemini CLI.
+- `coach audit`, only when you run it, reads your agent's config: instruction files, settings, plugin manifests and `~/.claude.json`. It outputs names, counts and paths, never values such as environment variables, arguments, headers, URLs or hook commands. It makes no network calls and writes only to `~/.agent-coach/state/audits/`.
 - If you use the cloud setup script, each new Claude Code web session clones `main` and runs code from it.
 
 So anyone who can change `main` can change what your agents are told and what runs on your machine. Treat write access to this repository like access to your shell.

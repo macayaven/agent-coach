@@ -9,6 +9,8 @@
   coach render [MODE]         print the always-on instructions (for chat apps)
   coach pack                  build dist/agent-coach-skill.zip to upload to chat apps
   coach doctor                show what is installed where, and the context cost
+  coach audit [--json]        check your agent's setup against the techniques (edits nothing)
+  coach memory ["HINT"]       tell the audit which memory tool to use (--save, --clear)
 """
 
 import subprocess
@@ -57,6 +59,14 @@ def main(argv):
         print(coachlib.status_line())
         for line in adapters.doctor():
             print(line)
+    elif cmd == "audit":
+        import audit  # only this command needs it, so the hooks stay fast
+
+        return audit.main(args)
+    elif cmd == "memory":
+        import audit
+
+        return audit.memory_command(args)
     elif cmd in ("-h", "--help", "help"):
         print(__doc__.strip())
     else:

@@ -1,0 +1,166 @@
+{
+  "audit_version": 1,
+  "tool": "claude-code",
+  "date": "2026-11-27",
+  "home": "tests/fixtures/audit-home",
+  "repo": "~/work/app",
+  "cwd": "~/work/app",
+  "findings": [
+    {
+      "id": "A1",
+      "name": "duplicate-instructions",
+      "techniques": [
+        "02-instruction-files"
+      ],
+      "subject": "~/.claude/CLAUDE.md + ~/work/app/CLAUDE.md",
+      "summary": "2 instruction files load the same text: about 27 tokens loaded twice every session",
+      "evidence": [
+        "~/.claude/CLAUDE.md",
+        "~/work/app/CLAUDE.md",
+        "different files, identical content"
+      ]
+    },
+    {
+      "id": "A4",
+      "name": "no-test-command",
+      "techniques": [
+        "02-instruction-files",
+        "03-verification"
+      ],
+      "subject": "~/work/app",
+      "summary": "the repo has tests, but no instruction file the agent loads says how to run them",
+      "evidence": [
+        "test setup: tests/",
+        "files checked: ~/.claude/CLAUDE.md, ~/work/app/CLAUDE.md"
+      ]
+    },
+    {
+      "id": "A5",
+      "name": "auto-without-containment",
+      "techniques": [
+        "16-safety"
+      ],
+      "subject": "~/.claude/settings.json",
+      "summary": "permissions.defaultMode is bypassPermissions, with no deny rules and no sandbox",
+      "evidence": [
+        "~/.claude/settings.json: permissions.defaultMode = bypassPermissions",
+        "permissions.deny: none in any settings file",
+        "sandbox.enabled: not true in any settings file"
+      ]
+    }
+  ],
+  "measurements": [
+    {
+      "id": "M1",
+      "name": "instruction-tokens",
+      "techniques": [
+        "02-instruction-files"
+      ],
+      "value": 54,
+      "summary": "about 54 tokens of instruction files load every session",
+      "detail": [
+        "~/.claude/CLAUDE.md (user): 5 lines, about 27 tokens",
+        "~/work/app/CLAUDE.md (project): 5 lines, about 27 tokens"
+      ]
+    },
+    {
+      "id": "M2",
+      "name": "context-hooks",
+      "techniques": [
+        "11-skills-hooks",
+        "12-tool-hygiene"
+      ],
+      "value": 0,
+      "summary": "0 hooks can add context at session start or on every prompt",
+      "detail": []
+    },
+    {
+      "id": "M3",
+      "name": "mcp-servers",
+      "techniques": [
+        "12-tool-hygiene"
+      ],
+      "value": 3,
+      "summary": "3 MCP servers are on in every project, 0 more in this one",
+      "detail": [
+        "notes (stdio, user)",
+        "search (http, user)",
+        "tickets (http, user)"
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "stop-hooks",
+      "techniques": [
+        "03-verification"
+      ],
+      "value": 0,
+      "summary": "0 Stop hooks; whether any runs a check is for you to judge",
+      "detail": []
+    },
+    {
+      "id": "M5",
+      "name": "plugins-and-skills",
+      "techniques": [
+        "11-skills-hooks"
+      ],
+      "value": {
+        "plugins": 0,
+        "skills": 0
+      },
+      "summary": "0 plugins and 0 skills are enabled",
+      "detail": []
+    },
+    {
+      "id": "M6",
+      "name": "evals",
+      "techniques": [
+        "17-evals"
+      ],
+      "value": false,
+      "summary": "no evals found in the repo",
+      "detail": []
+    }
+  ],
+  "instruction_files": [
+    {
+      "scope": "user",
+      "path": "~/.claude/CLAUDE.md",
+      "file": "tests/fixtures/audit-home/.claude/CLAUDE.md",
+      "resolved": "~/.claude/CLAUDE.md",
+      "lines": 5,
+      "tokens": 27
+    },
+    {
+      "scope": "project",
+      "path": "~/work/app/CLAUDE.md",
+      "file": "tests/fixtures/audit-home/work/app/CLAUDE.md",
+      "resolved": "~/work/app/CLAUDE.md",
+      "lines": 5,
+      "tokens": 27
+    }
+  ],
+  "hooks": [],
+  "repo_facts": {
+    "tests": [
+      "tests/"
+    ],
+    "ci": [],
+    "evals": []
+  },
+  "insights": {
+    "path": "~/.claude/usage-data/report.html",
+    "file": "tests/fixtures/insights-report.html",
+    "exists": true,
+    "age_days": 2,
+    "fresh": true
+  },
+  "memory_hint": null,
+  "unchecked": [
+    "MCP servers and connectors added through claude.ai or the desktop app (not in local files)",
+    "command-line flags and shell aliases (for example --dangerously-skip-permissions, --mcp-config)",
+    "CLAUDE.md files in subdirectories, which load only when the agent reads files there",
+    "what hook commands do: the audit records each hook's event and source, not its command",
+    "managed (organization) settings and instructions"
+  ]
+}

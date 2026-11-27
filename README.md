@@ -87,6 +87,22 @@ The mode is saved once for all tools, in `~/.agent-coach/state/mode`.
 - **Claude Code, Codex, Gemini CLI:** the hook handles the command instantly, without calling the model. `/coach off` also works.
 - **Other tools:** the agent applies the new mode for the current session and runs `coach <mode>` to save it. New sessions read the saved mode.
 
+## Audit your setup
+
+Per-request coaching only sees the prompt. `coach audit` looks at the setup your agent works in: the instruction files it loads, hooks, permissions, MCP servers, plugins, and whether the repo has tests and evals. v0 covers Claude Code.
+
+```
+coach audit            # findings and measurements, no model, no network, edits nothing
+coach audit --json     # the same, for the coach-audit skill
+```
+
+For a ranked report with fixes, ask your agent: type `coach audit` in a chat, or `/agent-coach:coach-audit` in Claude Code. The `coach-audit` skill runs the command, reads your memory tool if one is connected, reads your latest `/insights` report if it's under 30 days old, and gives you the top three gaps, each with evidence, a technique ID and a fill-in-the-blanks fix.
+
+- **Rules and measurements.** A rule fires only where a catalogue source states the threshold: the same instruction file loaded twice, an instruction file over 200 lines, all-caps IMPORTANT/ALWAYS/NEVER, tests with no test command in any instruction file, and `auto` or `bypassPermissions` with no deny rules or sandbox. Everything else (instruction tokens, context hooks, MCP servers, Stop hooks, plugins and skills, evals) is reported as a number for the skill to weigh.
+- **Privacy.** It reads a fixed list of config files and outputs MCP servers by name and transport, hooks by event and source, and settings by key name. It never outputs environment variables, arguments, headers, URLs or hook commands.
+- **History.** Each run is saved in `~/.agent-coach/state/audits/`, so the next one marks findings as new, still open or fixed.
+- **Memory.** `coach memory "hybrid-memory: search core and this repo's project"` tells the skill which memory tool and projects to search; add `--save` to let it save the audit summary without asking. Without a hint, it uses whatever memory tool the agent has, and offers to save.
+
 ## Keeping it current
 
 Practices change quickly, so the technique index carries a `reviewed:` date and each technique file carries a `verified:` date.
@@ -134,6 +150,7 @@ The coach loads as little as it can, and only when it's needed. Figures are esti
 | First coached request in a session | about 1,150 | The technique index: when each technique applies, and its redo skeleton |
 | Each time you ask `why` | up to about 470 | The one technique file with the rationale and sources |
 | Mode `off` | 0 with hooks; about 70 in tools that use an instruction file | A stub that says how to turn the coach back on |
+| `coach audit`, only when you ask | about 700 for the skill and 1,000 to 2,000 for the command's output | The `coach-audit` skill, then up to about 2,000 from memory and 3,000 from an `/insights` report |
 
 The unit tests enforce these budgets, so a refresh can't quietly make the coach heavier. An eval case also checks that a normal coaching turn reads the index and no technique files.
 
@@ -144,11 +161,12 @@ python3 -m unittest discover -s tests        # installer, hooks, mode logic, con
 bash tests/test_accept_refresh.sh            # the script that vets the monthly refresh
 bash tests/test_run_refresh_agent.sh         # how the refresh agent's sign-in is handled
 claude plugin eval . --runs 3 --ablation none   # behavior in Claude Code (makes real model calls)
+claude plugin eval . --runs 3 --ablation none --case 'audit-*' --allow-tools Bash   # the audit cases need the shell
 ```
 
 CI runs the first three on every pull request.
 
-The eval suite in `evals/` checks that force mode asks for a redo without loading technique files, suggest mode does the task and adds a note, plain questions are answered directly, and off stays quiet.
+The eval suite in `evals/` checks that force mode asks for a redo without loading technique files, suggest mode does the task and adds a note, plain questions are answered directly, and off stays quiet. The `audit-*` cases replay a recorded audit of a fake home in `tests/fixtures/` and check that the report ranks at most three gaps with evidence, works without a memory tool, and ignores an instruction planted in the `/insights` report. They replay instead of collecting because the eval sandbox can't read `.claude/` folders; the unit tests cover the collector.
 
 ## How it works
 
@@ -168,6 +186,7 @@ Installing Agent Coach lets this repository put instructions into your agents an
 - Coaching is an instruction to the model, reinforced by hooks where the tool has them. It isn't a hard lock: the model can occasionally skip it, and you can always say `coach skip`.
 - Cursor, VS Code Copilot and Antigravity can't add context to each prompt, so the rules arrive once per session. In a very long session the coaching can fade; start a new chat.
 - If both Codex and VS Code Copilot are installed, Copilot may list the skills twice, because it can read `~/.agents/skills` as well as `~/.copilot/skills`.
+- `coach audit` reads Claude Code's config files. A sandboxed shell may not be allowed to: the `claude plugin eval` sandbox blocks every `.claude/` folder, `~/.claude` included, and Claude Code's own sandbox may too. The audit then lists the files it couldn't read instead of treating them as missing. Run it in your own terminal for a full result.
 - Developed and tested on Linux. macOS should behave the same. Windows is untested; there, skills are copied instead of symlinked and `coach` isn't put on PATH.
 
 ## Layout
@@ -178,8 +197,10 @@ skills/agent-coach/references/index.md     technique index, read once per coache
 skills/agent-coach/references/techniques/  one file per technique, read only on `why`
 skills/agent-coach/references/             also: retired practices, sources, refresh procedure
 skills/coach/SKILL.md                      /coach command
+skills/coach-audit/SKILL.md                coach audit: ranks the setup gaps and proposes fixes
 hooks/                                     per-prompt and session-start hook
-bin/coach                                  CLI: modes, install, update, pack, doctor
+bin/coach                                  CLI: modes, install, update, pack, doctor, audit
+bin/audit.py                               the audit's collector, rules and measurements
 bin/adapters.py                            per-tool installers
 .claude-plugin/                            Claude Code plugin and marketplace manifests
 .github/workflows/                         CI and the monthly refresh

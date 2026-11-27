@@ -6,7 +6,7 @@ its rules into an instruction file you share with other things.
   - Hooks at session start and on every prompt: Claude Code, Codex, Gemini CLI.
   - Hooks at session start: Cursor.
   - A rules file of its own: Antigravity, VS Code Copilot.
-Plus the portable Agent Skills (`agent-coach`, `coach`) wherever skills are read.
+Plus the portable Agent Skills (`agent-coach`, `coach`, `coach-audit`) wherever skills are read.
 """
 
 import json
@@ -21,7 +21,7 @@ import coachlib
 
 HOME = Path.home()
 REPO = coachlib.REPO
-SKILL_NAMES = ("agent-coach", "coach")
+SKILL_NAMES = ("agent-coach", "coach", "coach-audit")
 COPY_MARKER = ".installed-by-agent-coach"
 BEGIN = "<!-- agent-coach:begin (managed by `coach`; edits inside this block are overwritten) -->"
 END = "<!-- agent-coach:end -->"
